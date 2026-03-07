@@ -1,0 +1,699 @@
+.landing {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(90, 214, 181, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 80%, rgba(243, 195, 95, 0.06) 0%, transparent 50%),
+    linear-gradient(180deg, #070c18, #0a1121, #060a13);
+  padding: 2rem;
+  overflow: hidden;
+}
+
+.landing-content {
+  max-width: 720px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+}
+
+.landing-content > * {
+  animation: hero-slide-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.landing-header {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.landing-brand {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'VT323', monospace;
+  font-size: 36px;
+  font-weight: 700;
+  color: #08111d;
+  background: linear-gradient(135deg, #5ad6b5, #f3c35f);
+  margin-bottom: 0.5rem;
+}
+
+.landing-title {
+  font-family: 'VT323', monospace;
+  font-size: clamp(48px, 8vw, 72px);
+  color: #f4f8ff;
+  letter-spacing: -1px;
+  line-height: 1;
+}
+
+.landing-tagline {
+  font-size: clamp(16px, 2.5vw, 22px);
+  color: #b8c6e4;
+  font-weight: 500;
+  max-width: 400px;
+}
+
+/* ═══════════════════════════════════════════════════
+   Office Preview
+   ═══════════════════════════════════════════════════ */
+.landing-office-preview {
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid rgba(90, 214, 181, 0.15);
+  background:
+    linear-gradient(90deg, rgba(90, 214, 181, 0.04) 1px, transparent 1px),
+    linear-gradient(rgba(90, 214, 181, 0.04) 1px, transparent 1px),
+    radial-gradient(circle at center, rgba(90, 214, 181, 0.06), transparent 60%),
+    #080e1c;
+  background-size: 22px 22px, 22px 22px, auto, auto;
+  padding: 1rem;
+  overflow: hidden;
+}
+
+.preview-office {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  min-height: 200px;
+}
+
+/* ─── Rooms ───────────────────────────────────────── */
+.preview-room {
+  position: absolute;
+  border-radius: 8px;
+  border: 1px solid;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 6px 10px;
+}
+
+.preview-room-label {
+  font-family: 'VT323', monospace;
+  font-size: 11px;
+  opacity: 0.5;
+  color: #b8c6e4;
+}
+
+.preview-room.launch-bay {
+  top: 5%; left: 3%; width: 44%; height: 44%;
+  border-color: rgba(255, 154, 60, 0.2);
+  background: radial-gradient(circle at center, rgba(255, 154, 60, 0.04), transparent);
+}
+
+.preview-room.strategy-pit {
+  top: 5%; left: 50%; width: 47%; height: 44%;
+  border-color: rgba(78, 205, 196, 0.2);
+  background: radial-gradient(circle at center, rgba(78, 205, 196, 0.04), transparent);
+}
+
+.preview-room.forum-deck {
+  top: 53%; left: 3%; width: 44%; height: 44%;
+  border-color: rgba(127, 149, 209, 0.2);
+  background: radial-gradient(circle at center, rgba(127, 149, 209, 0.04), transparent);
+}
+
+.preview-room.war-room {
+  top: 53%; left: 50%; width: 47%; height: 44%;
+  border-color: rgba(242, 95, 92, 0.2);
+  background: radial-gradient(circle at center, rgba(242, 95, 92, 0.04), transparent);
+}
+
+/* ═══════════════════════════════════════════════════
+   Walking Agents — each has a DIFFERENT cycle duration
+   for natural desynchronized autonomy
+   ═══════════════════════════════════════════════════ */
+.preview-agent {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+}
+
+.preview-agent img {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  filter: drop-shadow(0 0 8px var(--sprite-color));
+  animation: demo-bob 2.4s ease-in-out infinite;
+}
+
+/*
+   Walk timing (% of cycle):
+   0-8%    = stop A (work)
+   8-22%   = walk A→B
+   22-36%  = stop B (work + bubble)
+   36-50%  = walk B→C
+   50-64%  = stop C (work)
+   64-86%  = walk C→A (return)
+   86-100% = stop A (rest)
+*/
+
+/* Treasury Sentinel — Launch Bay — 14s cycle, no delay */
+.walk-ts {
+  --cycle: 14s;
+  animation: walk-ts var(--cycle) ease-in-out infinite backwards;
+}
+@keyframes walk-ts {
+  0%, 8%     { left: 17%; top: 26%; }
+  22%, 36%   { left: 35%; top: 18%; }
+  50%, 64%   { left: 12%; top: 40%; }
+  86%, 100%  { left: 17%; top: 26%; }
+}
+
+/* Yield Router — Strategy Pit — 18s cycle, 3s delay */
+.walk-yr {
+  --cycle: 18s;
+  animation: walk-yr var(--cycle) ease-in-out infinite backwards;
+  animation-delay: 3s;
+}
+@keyframes walk-yr {
+  0%, 8%     { left: 73%; top: 23%; }
+  22%, 36%   { left: 88%; top: 15%; }
+  50%, 64%   { left: 62%; top: 38%; }
+  86%, 100%  { left: 73%; top: 23%; }
+}
+
+/* Compliance Clerk — War Room — 16s cycle, 7s delay */
+.walk-cc {
+  --cycle: 16s;
+  animation: walk-cc var(--cycle) ease-in-out infinite backwards;
+  animation-delay: 7s;
+}
+@keyframes walk-cc {
+  0%, 8%     { left: 79%; top: 75%; }
+  22%, 36%   { left: 63%; top: 68%; }
+  50%, 64%   { left: 90%; top: 85%; }
+  86%, 100%  { left: 79%; top: 75%; }
+}
+
+/* Governance Relay — Forum Deck — 20s cycle, 1s delay */
+.walk-gr {
+  --cycle: 20s;
+  animation: walk-gr var(--cycle) ease-in-out infinite backwards;
+  animation-delay: 1s;
+}
+@keyframes walk-gr {
+  0%, 8%     { left: 18%; top: 79%; }
+  22%, 36%   { left: 36%; top: 70%; }
+  50%, 64%   { left: 12%; top: 90%; }
+  86%, 100%  { left: 18%; top: 79%; }
+}
+
+/* ─── Sprite bob ──────────────────────────────────── */
+@keyframes demo-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
+}
+
+/* ─── Glow ring — inherits --cycle from parent ────── */
+.preview-agent-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid var(--sprite-color);
+  opacity: 0;
+  animation-name: demo-ring-pulse;
+  animation-duration: var(--cycle, 16s);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-fill-mode: backwards;
+}
+
+@keyframes demo-ring-pulse {
+  0%   { opacity: 0; transform: scale(0.8); }
+  2%   { opacity: 0.6; transform: scale(1.2); }
+  6%   { opacity: 0; transform: scale(1.5); }
+  22%  { opacity: 0; transform: scale(0.8); }
+  24%  { opacity: 0.6; transform: scale(1.2); }
+  28%  { opacity: 0; transform: scale(1.5); }
+  50%  { opacity: 0; transform: scale(0.8); }
+  52%  { opacity: 0.6; transform: scale(1.2); }
+  56%  { opacity: 0; transform: scale(1.5); }
+  100% { opacity: 0; }
+}
+
+/* ═══════════════════════════════════════════════════
+   Working Dots — inherits --cycle
+   ═══════════════════════════════════════════════════ */
+.demo-work-dots {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 3px;
+  opacity: 0;
+  animation-name: demo-dots-visibility;
+  animation-duration: var(--cycle, 16s);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-fill-mode: backwards;
+}
+
+.demo-work-dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--sprite-color);
+}
+
+.demo-work-dots span:nth-child(1) { animation: demo-dot-bounce 0.6s ease-in-out infinite 0s; }
+.demo-work-dots span:nth-child(2) { animation: demo-dot-bounce 0.6s ease-in-out infinite 0.15s; }
+.demo-work-dots span:nth-child(3) { animation: demo-dot-bounce 0.6s ease-in-out infinite 0.3s; }
+
+@keyframes demo-dot-bounce {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-5px); }
+}
+
+@keyframes demo-dots-visibility {
+  0%, 1%    { opacity: 0; }
+  2%, 7%    { opacity: 1; }
+  8%, 22%   { opacity: 0; }
+  23%, 35%  { opacity: 1; }
+  36%, 50%  { opacity: 0; }
+  51%, 63%  { opacity: 1; }
+  64%, 100% { opacity: 0; }
+}
+
+/* ═══════════════════════════════════════════════════
+   Speech Bubble — inherits --cycle, appears at stop B
+   ═══════════════════════════════════════════════════ */
+.demo-bubble {
+  position: absolute;
+  top: -34px;
+  left: 50%;
+  transform: translateX(-50%) scale(0.8);
+  background: rgba(10, 17, 33, 0.92);
+  border: 1px solid var(--sprite-color);
+  border-radius: 10px;
+  padding: 4px 10px;
+  font-family: 'Space Grotesk', 'VT323', monospace;
+  font-size: 11px;
+  color: #eef5ff;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  animation-name: demo-bubble-pop;
+  animation-duration: var(--cycle, 16s);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-fill-mode: backwards;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+  z-index: 5;
+}
+
+.demo-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 8px;
+  height: 8px;
+  background: rgba(10, 17, 33, 0.92);
+  border-right: 1px solid var(--sprite-color);
+  border-bottom: 1px solid var(--sprite-color);
+}
+
+@keyframes demo-bubble-pop {
+  0%, 24%   { opacity: 0; transform: translateX(-50%) scale(0.8); }
+  26%       { opacity: 1; transform: translateX(-50%) scale(1.05); }
+  28%, 34%  { opacity: 1; transform: translateX(-50%) scale(1); }
+  36%       { opacity: 0; transform: translateX(-50%) scale(0.9) translateY(-6px); }
+  100%      { opacity: 0; transform: translateX(-50%) scale(0.9); }
+}
+
+/* ═══════════════════════════════════════════════════
+   Inter-Agent Data Transfer Particles
+   Glowing dots that fly between rooms to show
+   multi-agent coordination
+   ═══════════════════════════════════════════════════ */
+.demo-particle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--p-color);
+  box-shadow: 0 0 6px var(--p-color), 0 0 12px var(--p-color);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 4;
+}
+
+/*
+   Each transfer fires once per 24s cycle, staggered.
+   Travel takes ~8% of cycle (~2s). Trail dots delayed by --p-trail.
+
+   Room anchor points (centers):
+     Launch Bay:   25%, 27%
+     Strategy Pit: 73%, 27%
+     Forum Deck:   25%, 75%
+     War Room:     73%, 75%
+*/
+
+/* Transfer 1: Launch Bay → War Room (Treasury → Compliance) — diagonal ↘ */
+.p-lb-wr {
+  animation: fly-lb-wr 24s linear infinite backwards;
+  animation-delay: var(--p-trail, 0s);
+}
+@keyframes fly-lb-wr {
+  0%, 3%   { left: 25%; top: 27%; opacity: 0; }
+  4%       { left: 25%; top: 27%; opacity: 1; }
+  12%      { left: 73%; top: 75%; opacity: 0.8; }
+  14%      { left: 73%; top: 75%; opacity: 0; }
+  100%     { opacity: 0; }
+}
+
+/* Transfer 2: Strategy Pit → Forum Deck (Yield → Governance) — diagonal ↙ */
+.p-sp-fd {
+  animation: fly-sp-fd 24s linear infinite backwards;
+  animation-delay: calc(6s + var(--p-trail, 0s));
+}
+@keyframes fly-sp-fd {
+  0%, 3%   { left: 73%; top: 27%; opacity: 0; }
+  4%       { left: 73%; top: 27%; opacity: 1; }
+  12%      { left: 25%; top: 75%; opacity: 0.8; }
+  14%      { left: 25%; top: 75%; opacity: 0; }
+  100%     { opacity: 0; }
+}
+
+/* Transfer 3: Forum Deck → Launch Bay (Governance → Treasury) — vertical ↑ */
+.p-fd-lb {
+  animation: fly-fd-lb 24s linear infinite backwards;
+  animation-delay: calc(12s + var(--p-trail, 0s));
+}
+@keyframes fly-fd-lb {
+  0%, 3%   { left: 25%; top: 75%; opacity: 0; }
+  4%       { left: 25%; top: 75%; opacity: 1; }
+  12%      { left: 25%; top: 27%; opacity: 0.8; }
+  14%      { left: 25%; top: 27%; opacity: 0; }
+  100%     { opacity: 0; }
+}
+
+/* Transfer 4: War Room → Strategy Pit (Compliance → Yield) — vertical ↑ */
+.p-wr-sp {
+  animation: fly-wr-sp 24s linear infinite backwards;
+  animation-delay: calc(18s + var(--p-trail, 0s));
+}
+@keyframes fly-wr-sp {
+  0%, 3%   { left: 73%; top: 75%; opacity: 0; }
+  4%       { left: 73%; top: 75%; opacity: 1; }
+  12%      { left: 73%; top: 27%; opacity: 0.8; }
+  14%      { left: 73%; top: 27%; opacity: 0; }
+  100%     { opacity: 0; }
+}
+
+/* ═══════════════════════════════════════════════════
+   Send Ring — expands outward from source on departure
+   ═══════════════════════════════════════════════════ */
+.demo-send-ring {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  border: 2px solid var(--p-color);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 3;
+  animation: beacon-send 24s linear infinite backwards;
+  animation-delay: var(--t-delay, 0s);
+}
+
+@keyframes beacon-send {
+  0%, 3%   { width: 0; height: 0; opacity: 0; }
+  4%       { width: 6px; height: 6px; opacity: 0.8; }
+  6%       { width: 24px; height: 24px; opacity: 0.4; }
+  8%       { width: 36px; height: 36px; opacity: 0; }
+  100%     { opacity: 0; }
+}
+
+/* ═══════════════════════════════════════════════════
+   Receive Beacon — pulses at dest while waiting,
+   flashes on particle arrival
+   ═══════════════════════════════════════════════════ */
+.demo-recv-beacon {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--p-color);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 3;
+  box-shadow: 0 0 6px var(--p-color);
+  animation: beacon-wait 24s linear infinite backwards;
+  animation-delay: var(--t-delay, 0s);
+}
+
+@keyframes beacon-wait {
+  /* Appear when particle departs from source */
+  0%, 3%   { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+  /* Soft pulse while waiting for particle */
+  4%       { opacity: 0.4; transform: translate(-50%, -50%) scale(0.8); }
+  6%       { opacity: 0.2; transform: translate(-50%, -50%) scale(0.6); }
+  8%       { opacity: 0.4; transform: translate(-50%, -50%) scale(0.9); }
+  10%      { opacity: 0.2; transform: translate(-50%, -50%) scale(0.6); }
+  /* Flash big on particle arrival */
+  12%      { opacity: 1; transform: translate(-50%, -50%) scale(1.6); box-shadow: 0 0 16px var(--p-color), 0 0 30px var(--p-color); }
+  14%      { opacity: 0.6; transform: translate(-50%, -50%) scale(1); }
+  16%      { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+  100%     { opacity: 0; }
+}
+
+/* ═══════════════════════════════════════════════════
+   Activity Ticker
+   ═══════════════════════════════════════════════════ */
+.demo-ticker {
+  margin-top: 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 6px 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.demo-ticker::before,
+.demo-ticker::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.demo-ticker::before {
+  left: 0;
+  background: linear-gradient(90deg, #080e1c, transparent);
+}
+
+.demo-ticker::after {
+  right: 0;
+  background: linear-gradient(-90deg, #080e1c, transparent);
+}
+
+.demo-ticker-track {
+  display: flex;
+  gap: 2rem;
+  white-space: nowrap;
+  animation: demo-ticker-scroll 25s linear infinite;
+}
+
+.demo-ticker-item {
+  font-family: 'VT323', monospace;
+  font-size: 12px;
+  color: #8390ad;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.demo-ticker-item::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.demo-ticker-vault::before  { background: #f3c35f; }
+.demo-ticker-success::before { background: #5ad6b5; }
+.demo-ticker-system::before  { background: #7f95d1; }
+
+@keyframes demo-ticker-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+/* ═══════════════════════════════════════════════════
+   Value Pillars
+   ═══════════════════════════════════════════════════ */
+.landing-pillars {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  width: 100%;
+}
+
+.pillar {
+  text-align: center;
+  padding: 1.25rem 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.pillar-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 0.75rem;
+  background: linear-gradient(135deg, rgba(90, 214, 181, 0.15), rgba(243, 195, 95, 0.1));
+  color: #5ad6b5;
+}
+
+.pillar h3 {
+  font-family: 'VT323', monospace;
+  font-size: 18px;
+  color: #f4f8ff;
+  margin-bottom: 0.3rem;
+}
+
+.pillar p {
+  font-size: 13px;
+  color: #8390ad;
+  line-height: 1.4;
+}
+
+/* ═══════════════════════════════════════════════════
+   CTA Button
+   ═══════════════════════════════════════════════════ */
+.landing-cta-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.landing-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 14px 36px;
+  border-radius: 12px;
+  border: none;
+  font-size: 18px;
+  font-weight: 600;
+  font-family: 'Space Grotesk', sans-serif;
+  color: #08111d;
+  background: linear-gradient(135deg, #5ad6b5, #f3c35f);
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  animation: fab-breathe 3s ease-in-out infinite;
+}
+
+.landing-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 30px rgba(90, 214, 181, 0.4);
+}
+
+.landing-cta:active {
+  transform: translateY(0);
+}
+
+.landing-cta-demo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 28px;
+  border-radius: 12px;
+  border: 1px solid rgba(90, 214, 181, 0.3);
+  font-size: 16px;
+  font-weight: 600;
+  font-family: 'Space Grotesk', sans-serif;
+  color: #5ad6b5;
+  background: rgba(90, 214, 181, 0.08);
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.landing-cta-demo:hover {
+  transform: translateY(-2px);
+  background: rgba(90, 214, 181, 0.15);
+  box-shadow: 0 4px 20px rgba(90, 214, 181, 0.2);
+}
+
+.landing-cta-demo:active {
+  transform: translateY(0);
+}
+
+.landing-powered {
+  font-size: 13px;
+  color: #5a6888;
+}
+
+.landing-powered strong {
+  color: #8390ad;
+}
+
+/* ═══════════════════════════════════════════════════
+   Mobile
+   ═══════════════════════════════════════════════════ */
+@media (max-width: 600px) {
+  .landing-pillars {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-content {
+    gap: 1.5rem;
+  }
+
+  .demo-bubble {
+    font-size: 9px;
+    padding: 3px 7px;
+  }
+
+  .demo-ticker-item {
+    font-size: 10px;
+  }
+
+  .preview-agent {
+    width: 26px;
+    height: 26px;
+  }
+
+  .demo-work-dots span {
+    width: 3px;
+    height: 3px;
+  }
+
+  .demo-particle {
+    width: 3px;
+    height: 3px;
+  }
+
+  .demo-recv-beacon {
+    width: 6px;
+    height: 6px;
+  }
+}

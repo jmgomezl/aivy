@@ -1,0 +1,288 @@
+/* ═══════════════════════════════════════════════════
+   DemoCoach — Guided Demo Tutorial Overlay
+   ═══════════════════════════════════════════════════ */
+
+/* ─── Backdrop with spotlight cutout ──────────── */
+.demo-coach-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  transition: clip-path 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ─── Target highlight (applied via JS) ──────── */
+.demo-coach-target {
+  position: relative;
+  z-index: 91 !important;
+  border-radius: 12px;
+  animation: demo-target-pulse 1.5s ease-in-out infinite !important;
+}
+
+@keyframes demo-target-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 4px rgba(90, 214, 181, 0.4), 0 0 20px rgba(90, 214, 181, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(90, 214, 181, 0.2), 0 0 35px rgba(90, 214, 181, 0.25);
+  }
+}
+
+/* ─── Instruction card ───────────────────────── */
+.demo-coach-card {
+  position: fixed;
+  z-index: 92;
+  width: 290px;
+  padding: 20px;
+  border-radius: 16px;
+  background: rgba(10, 17, 33, 0.96);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(90, 214, 181, 0.25);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(90, 214, 181, 0.1);
+  pointer-events: auto;
+  animation: demo-card-enter 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes demo-card-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* ─── Card header ────────────────────────────── */
+.demo-coach-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.demo-coach-step-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 10px;
+  border-radius: 10px;
+  background: rgba(90, 214, 181, 0.12);
+  border: 1px solid rgba(90, 214, 181, 0.2);
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+  color: #5ad6b5;
+}
+
+.demo-coach-title {
+  font-family: 'VT323', monospace;
+  font-size: 22px;
+  color: #eef5ff;
+  margin-bottom: 6px;
+}
+
+.demo-coach-body {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 13px;
+  color: #8a9bb8;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+/* ─── Progress dots ──────────────────────────── */
+.demo-coach-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.demo-coach-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.demo-coach-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  transition: all 0.3s;
+}
+
+.demo-coach-dot.is-done {
+  background: rgba(90, 214, 181, 0.35);
+}
+
+.demo-coach-dot.is-active {
+  background: #5ad6b5;
+  transform: scale(1.4);
+  box-shadow: 0 0 8px rgba(90, 214, 181, 0.5);
+}
+
+/* ─── Action hint (arrow + text) ─────────────── */
+.demo-coach-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(90, 214, 181, 0.08);
+  border: 1px solid rgba(90, 214, 181, 0.15);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 12px;
+  color: #5ad6b5;
+  margin-bottom: 14px;
+  animation: hint-pulse 2s ease-in-out infinite;
+}
+
+@keyframes hint-pulse {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+
+/* ─── Auto-step progress bar ─────────────────── */
+.demo-coach-progress-track {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+
+.demo-coach-progress-bar {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #5ad6b5, #f3c35f);
+  animation: progress-fill linear forwards;
+  transform-origin: left;
+}
+
+@keyframes progress-fill {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+
+/* ─── Footer actions row ─────────────────────── */
+.demo-coach-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ─── Next / Got it button ───────────────────── */
+.demo-coach-next {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(90, 214, 181, 0.12);
+  border: 1px solid rgba(90, 214, 181, 0.2);
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 12px;
+  color: #5ad6b5;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.demo-coach-next:hover {
+  background: rgba(90, 214, 181, 0.2);
+  border-color: rgba(90, 214, 181, 0.35);
+}
+
+/* ─── Skip button ────────────────────────────── */
+.demo-coach-skip {
+  background: none;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 12px;
+  color: #5a6888;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+}
+
+.demo-coach-skip:hover {
+  color: #eef5ff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ─── Celebration (final step) ───────────────── */
+.demo-coach-card.is-celebration {
+  text-align: center;
+  border-color: rgba(243, 195, 95, 0.3);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 0 60px rgba(90, 214, 181, 0.1);
+  animation: demo-card-enter-center 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes demo-card-enter-center {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.demo-coach-celebration-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(90, 214, 181, 0.15), rgba(243, 195, 95, 0.15));
+  border: 1px solid rgba(90, 214, 181, 0.2);
+  margin: 0 auto 12px;
+  animation: celebration-bounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes celebration-bounce {
+  from { transform: scale(0); }
+  50% { transform: scale(1.15); }
+  to { transform: scale(1); }
+}
+
+.demo-coach-finish {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 24px;
+  border-radius: 10px;
+  border: none;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: #08111d;
+  background: linear-gradient(135deg, #5ad6b5, #f3c35f);
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  margin-top: 4px;
+}
+
+.demo-coach-finish:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(90, 214, 181, 0.4);
+}
+
+/* ─── Waiting state (target not in DOM yet) ─── */
+.demo-coach-waiting .demo-coach-body::after {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #5ad6b5;
+  margin-left: 6px;
+  animation: demo-waiting-dot 1.2s ease-in-out infinite;
+}
+
+@keyframes demo-waiting-dot {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}

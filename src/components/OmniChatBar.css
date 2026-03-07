@@ -1,0 +1,148 @@
+/* ═══════════════════════════════════════════════════
+   OmniChatBar — Global chat routing bar on PixelOffice
+   ═══════════════════════════════════════════════════ */
+
+.omni-bar-wrapper {
+  padding: 8px 12px;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ─── Route Toast ─────────────────────────────────── */
+.omni-route-toast {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 10px;
+  background: rgba(90, 214, 181, 0.1);
+  border: 1px solid rgba(90, 214, 181, 0.25);
+  color: #5ad6b5;
+  font-size: 12px;
+  font-family: 'Space Grotesk', sans-serif;
+  animation: omni-toast-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  backdrop-filter: blur(12px);
+}
+
+.omni-route-toast strong {
+  color: #8fe8d0;
+}
+
+.omni-route-icon {
+  display: flex;
+  align-items: center;
+}
+
+/* ─── Main Bar ────────────────────────────────────── */
+.omni-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: var(--bg-ticker);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-medium);
+  transition: border-color 0.2s;
+}
+
+.omni-bar:focus-within {
+  border-color: rgba(90, 214, 181, 0.3);
+}
+
+.omni-bar-icon {
+  color: var(--color-muted);
+  flex-shrink: 0;
+}
+
+.omni-bar-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 13px;
+  font-family: 'Space Grotesk', sans-serif;
+  outline: none;
+}
+
+.omni-bar-input::placeholder {
+  color: var(--color-muted);
+}
+
+.omni-bar-input:disabled {
+  opacity: 0.5;
+}
+
+/* ─── Spinner ─────────────────────────────────────── */
+.omni-bar-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(90, 214, 181, 0.2);
+  border-top-color: #5ad6b5;
+  border-radius: 50%;
+  animation: omni-spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+
+/* ─── Send Button ─────────────────────────────────── */
+.omni-bar-send {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, #5ad6b5, #f3c35f);
+  color: #08111d;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.omni-bar-send:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: scale(1.06);
+}
+
+.omni-bar-send:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+/* ─── Animations ──────────────────────────────────── */
+@keyframes omni-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes omni-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ─── Mobile Responsive ───────────────────────── */
+@media (max-width: 768px) {
+  .omni-bar-wrapper {
+    padding: 6px;
+  }
+
+  .omni-bar {
+    padding: 6px 10px;
+    border-radius: 12px;
+  }
+
+  .omni-bar-input {
+    font-size: 16px; /* prevent iOS zoom on focus */
+  }
+}

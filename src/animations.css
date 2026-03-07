@@ -1,0 +1,169 @@
+/* ─── Agent Idle Bob ────────────────────────────────── */
+@keyframes agent-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+/* ─── Deploy Materialize ───────────────────────────── */
+@keyframes agent-materialize {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+    filter: blur(6px) brightness(2);
+  }
+  40% {
+    opacity: 0.6;
+    transform: scale(1.15);
+    filter: blur(0) brightness(1.4);
+  }
+  70% {
+    opacity: 0.9;
+    transform: scale(0.95);
+    filter: blur(0) brightness(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0) brightness(1);
+  }
+}
+
+/* ─── Working Pulse ────────────────────────────────── */
+@keyframes agent-working {
+  0%, 100% {
+    box-shadow: 0 0 0 0 var(--sprite-color, #61d6bf);
+  }
+  50% {
+    box-shadow:
+      0 0 18px 4px var(--sprite-color, #61d6bf),
+      0 0 40px 8px color-mix(in srgb, var(--sprite-color, #61d6bf) 30%, transparent);
+  }
+}
+
+/* ─── Sparkle Particles ────────────────────────────── */
+@keyframes sparkle-1 {
+  0% { opacity: 0; transform: translate(0, 0) scale(0); }
+  30% { opacity: 1; transform: translate(-12px, -18px) scale(1); }
+  100% { opacity: 0; transform: translate(-16px, -30px) scale(0); }
+}
+
+@keyframes sparkle-2 {
+  0% { opacity: 0; transform: translate(0, 0) scale(0); }
+  30% { opacity: 1; transform: translate(10px, -20px) scale(1); }
+  100% { opacity: 0; transform: translate(14px, -34px) scale(0); }
+}
+
+@keyframes sparkle-3 {
+  0% { opacity: 0; transform: translate(0, 0) scale(0); }
+  40% { opacity: 1; transform: translate(0, -16px) scale(1.2); }
+  100% { opacity: 0; transform: translate(2px, -28px) scale(0); }
+}
+
+/* ─── Speech Bubble ────────────────────────────────── */
+@keyframes bubble-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0) translateY(6px);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08) translateY(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes bubble-fade {
+  0% { opacity: 1; transform: scale(1) translateY(0); }
+  100% { opacity: 0; transform: scale(0.9) translateY(-6px); }
+}
+
+/* ─── Room Ambient Glow ────────────────────────────── */
+@keyframes room-glow {
+  0%, 100% { opacity: 0.03; }
+  50% { opacity: 0.09; }
+}
+
+/* ─── Hero Entrance ────────────────────────────────── */
+@keyframes hero-slide-up {
+  0% {
+    opacity: 0;
+    transform: translateY(50px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hero-fade-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* ─── Panel Slide In ───────────────────────────────── */
+@keyframes slide-in-right {
+  0% {
+    transform: translateX(100%);
+    opacity: 0.5;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-in-up {
+  0% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* ─── Fade Scale (for modals) ──────────────────────── */
+@keyframes fade-scale-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ─── Ticker Scroll ────────────────────────────────── */
+@keyframes ticker-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* ─── Status Dot Pulse ─────────────────────────────── */
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.3); }
+}
+
+/* ─── Floating Button Breathe ──────────────────────── */
+@keyframes fab-breathe {
+  0%, 100% { box-shadow: 0 4px 20px rgba(90, 214, 181, 0.3); }
+  50% { box-shadow: 0 4px 30px rgba(90, 214, 181, 0.5); }
+}
+
+/* ─── View Transition ──────────────────────────────── */
+@keyframes view-enter {
+  0% {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

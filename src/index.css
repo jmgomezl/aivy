@@ -1,0 +1,138 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=VT323&display=swap');
+
+:root {
+  font-family: var(--font-body);
+  line-height: 1.5;
+  font-weight: 400;
+  color: var(--color-text);
+  background: var(--bg-root);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* Fonts */
+  --font-body: 'Space Grotesk', 'Segoe UI', sans-serif;
+  --font-display: 'VT323', monospace;
+
+  /* Semantic colors — dark (default) */
+  --color-text: #f4f8ff;
+  --color-text-soft: #b8c6e4;
+  --color-muted: #5a6888;
+  --color-accent: #5ad6b5;
+  --color-accent-amber: #f3c35f;
+
+  /* Surfaces */
+  --bg-root:
+    radial-gradient(circle at top left, rgba(82, 167, 255, 0.18), transparent 28%),
+    radial-gradient(circle at 85% 12%, rgba(255, 154, 60, 0.16), transparent 22%),
+    linear-gradient(180deg, #070d1a, #040812 62%, #02040a);
+  --bg-app:
+    radial-gradient(ellipse at 20% 10%, rgba(90, 214, 181, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 90%, rgba(243, 195, 95, 0.04) 0%, transparent 50%),
+    linear-gradient(180deg, #070c18, #0a1121, #060a13);
+  --bg-surface: rgba(10, 17, 33, 0.97);
+  --bg-surface-light: rgba(255, 255, 255, 0.03);
+  --bg-surface-hover: rgba(255, 255, 255, 0.06);
+  --bg-topbar: rgba(8, 17, 29, 0.9);
+  --bg-office:
+    linear-gradient(90deg, rgba(90, 214, 181, 0.03) 1px, transparent 1px),
+    linear-gradient(rgba(90, 214, 181, 0.03) 1px, transparent 1px),
+    radial-gradient(ellipse at 25% 30%, rgba(255, 154, 60, 0.04), transparent 50%),
+    radial-gradient(ellipse at 75% 30%, rgba(78, 205, 196, 0.04), transparent 50%),
+    radial-gradient(ellipse at 25% 75%, rgba(127, 149, 209, 0.04), transparent 50%),
+    radial-gradient(ellipse at 75% 75%, rgba(242, 95, 92, 0.04), transparent 50%),
+    linear-gradient(180deg, #070c18, #060a13);
+  --bg-ticker: rgba(8, 17, 29, 0.88);
+
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.04);
+  --border-soft: rgba(255, 255, 255, 0.06);
+  --border-medium: rgba(255, 255, 255, 0.08);
+
+  /* Overlays */
+  --overlay-dim: rgba(0, 0, 0, 0.3);
+
+  /* WalletConnect modal — slightly darker backdrop */
+  --wcm-overlay-background-color: rgba(0, 0, 0, 0.6);
+
+  /* Scrollbar */
+  --scrollbar-thumb: rgba(255, 255, 255, 0.08);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.14);
+
+  /* Sprite base for color-mix */
+  --sprite-base: #0d162d;
+}
+
+/* ═══════════════════════════════════════════════════
+   Light Theme
+   ═══════════════════════════════════════════════════ */
+[data-theme="light"] {
+  --color-text: #1a2233;
+  --color-text-soft: #3d4f6e;
+  --color-muted: #6b7a96;
+  --color-accent: #0fa882;
+  --color-accent-amber: #c9920a;
+
+  --bg-root: linear-gradient(180deg, #f0f2f5, #e6e9ee 62%, #dce0e6);
+  --bg-app: linear-gradient(180deg, #f4f6f8, #ebeff3, #e8ecf0);
+  --bg-surface: rgba(255, 255, 255, 0.97);
+  --bg-surface-light: rgba(0, 0, 0, 0.03);
+  --bg-surface-hover: rgba(0, 0, 0, 0.05);
+  --bg-topbar: rgba(255, 255, 255, 0.92);
+  --bg-office:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(180deg, #f0f2f5, #e8ecf0);
+  --bg-ticker: rgba(255, 255, 255, 0.92);
+
+  --border-subtle: rgba(0, 0, 0, 0.05);
+  --border-soft: rgba(0, 0, 0, 0.08);
+  --border-medium: rgba(0, 0, 0, 0.1);
+
+  --overlay-dim: rgba(0, 0, 0, 0.15);
+
+  --scrollbar-thumb: rgba(0, 0, 0, 0.1);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.18);
+
+  --sprite-base: #e8ecf2;
+
+  -webkit-font-smoothing: auto;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  cursor: pointer;
+}
+
+#root {
+  min-height: 100vh;
+}
+

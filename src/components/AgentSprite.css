@@ -1,0 +1,206 @@
+.agent-sprite-v2 {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px;
+  border: 1px solid var(--border-medium);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--sprite-color, #61d6bf) 12%, var(--sprite-base));
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  z-index: 2;
+  animation: agent-bob 2.6s ease-in-out infinite;
+  animation-delay: var(--bob-delay, 0s);
+}
+
+.agent-sprite-v2:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: color-mix(in srgb, var(--sprite-color, #61d6bf) 20%, var(--sprite-base));
+}
+
+.agent-sprite-v2.is-selected {
+  border-color: var(--sprite-color, #61d6bf);
+  background: color-mix(in srgb, var(--sprite-color, #61d6bf) 22%, var(--sprite-base));
+  box-shadow: 0 0 20px color-mix(in srgb, var(--sprite-color, #61d6bf) 30%, transparent);
+  z-index: 3;
+}
+
+/* ─── Deploying State ──────────────────────────── */
+.agent-sprite-v2.is-deploying {
+  animation: agent-materialize 1s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+             agent-bob 2.6s ease-in-out 1s infinite;
+  animation-delay: 0s, var(--bob-delay, 0s);
+}
+
+/* ─── Working State ────────────────────────────── */
+.agent-sprite-v2.is-working {
+  animation: agent-bob 2.6s ease-in-out infinite,
+             agent-working 3s ease-in-out infinite;
+  animation-delay: var(--bob-delay, 0s), 0s;
+}
+
+/* ─── Paused State ─────────────────────────────── */
+.agent-sprite-v2.is-paused {
+  opacity: 0.5;
+  animation: none;
+  filter: grayscale(0.4);
+}
+
+/* ─── Portrait ─────────────────────────────────── */
+.sprite-portrait {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.sprite-portrait .pixel-image {
+  width: 34px;
+  height: 34px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* ─── Labels ───────────────────────────────────── */
+.sprite-name {
+  font-family: 'VT323', monospace;
+  font-size: 11px;
+  color: var(--color-text);
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sprite-status {
+  font-size: 9px;
+  color: var(--sprite-accent, #8390ad);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+/* ─── Sparkle Particles ────────────────────────── */
+.sparkle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--sprite-color, #61d6bf);
+  pointer-events: none;
+  top: 10px;
+  left: 50%;
+}
+
+.sparkle.s1 {
+  animation: sparkle-1 2s ease-out infinite;
+  animation-delay: 0s;
+}
+
+.sparkle.s2 {
+  animation: sparkle-2 2s ease-out infinite;
+  animation-delay: 0.6s;
+}
+
+.sparkle.s3 {
+  animation: sparkle-3 2s ease-out infinite;
+  animation-delay: 1.2s;
+}
+
+/* ─── Speech Bubble ────────────────────────────── */
+.speech-bubble {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-surface);
+  border: 1px solid rgba(90, 214, 181, 0.25);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-family: 'VT323', monospace;
+  font-size: 12px;
+  color: var(--color-text-soft);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: bubble-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  z-index: 10;
+}
+
+.speech-bubble::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: rgba(90, 214, 181, 0.25);
+}
+
+/* ─── Executing State (activity overlay) ──────── */
+.agent-sprite-v2.is-executing {
+  box-shadow: 0 0 24px color-mix(in srgb, var(--sprite-color, #61d6bf) 50%, transparent);
+}
+
+.activity-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 16px;
+  border: 2px solid var(--sprite-color, #61d6bf);
+  opacity: 0;
+  pointer-events: none;
+  animation: ring-pulse 1.2s ease-out infinite;
+}
+
+@keyframes ring-pulse {
+  0% {
+    opacity: 0.8;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.15);
+  }
+}
+
+.speech-bubble.is-fading {
+  animation: bubble-fade 0.5s ease-out forwards;
+}
+
+/* ─── Mobile Responsive ───────────────────────── */
+@media (max-width: 768px) {
+  .agent-sprite-v2 {
+    padding: 4px;
+    border-radius: 8px;
+    gap: 2px;
+  }
+
+  .sprite-portrait {
+    width: 30px;
+    height: 30px;
+  }
+
+  .sprite-portrait .pixel-image {
+    width: 24px;
+    height: 24px;
+  }
+
+  .sprite-name {
+    font-size: 9px;
+    max-width: 54px;
+  }
+
+  .sprite-status {
+    font-size: 7px;
+  }
+
+  .speech-bubble {
+    font-size: 10px;
+    padding: 3px 8px;
+  }
+}

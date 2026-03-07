@@ -1,0 +1,90 @@
+/* ═══════════════════════════════════════════════════
+   AIVY — App Layout (V2)
+   Only global layout + shared utility styles.
+   Component styles live in component CSS files.
+   ═══════════════════════════════════════════════════ */
+
+/* ─── App Shell ────────────────────────────────── */
+.app-v2 {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-app);
+}
+
+.office-main {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ─── Pixel Image Global ───────────────────────── */
+.pixel-image {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* ─── Shared Typography ────────────────────────── */
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  font-family: var(--font-display, 'VT323', monospace);
+}
+
+p {
+  margin: 0;
+}
+
+/* ─── Scrollbar ──────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* ─── Offline Banner ─────────────────────────── */
+.offline-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: linear-gradient(90deg, rgba(242, 95, 92, 0.12), rgba(255, 154, 60, 0.12));
+  border-bottom: 1px solid rgba(242, 95, 92, 0.25);
+  color: #f2a35c;
+  font-size: 13px;
+  font-family: 'Space Grotesk', sans-serif;
+  animation: offline-pulse 3s ease-in-out infinite;
+}
+
+.offline-banner svg {
+  flex-shrink: 0;
+  color: #f25f5c;
+}
+
+.offline-banner code {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+  color: #eef5ff;
+}
+
+@keyframes offline-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
