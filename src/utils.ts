@@ -1,9 +1,16 @@
 import type { AgentTemplate, LiveAgent, ResultReference } from './types'
+import { getAuthHeaders } from './lib/auth'
 
 export async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const authHeaders = getAuthHeaders()
+  const mergedInit: RequestInit = {
+    ...init,
+    headers: { ...authHeaders, ...init?.headers },
+  }
+
   let response: Response
   try {
-    response = await fetch(url, init)
+    response = await fetch(url, mergedInit)
   } catch {
     throw new Error('Cannot reach the backend server. Make sure it is running (npm run dev).')
   }

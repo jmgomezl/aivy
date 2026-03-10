@@ -57,6 +57,8 @@ export type ServerDeployment = {
   contractAddress: string | null
   deploymentTxId: string | null
   vaultCapHbar: number
+  agentAccountId: string | null
+  walletType: 'platform' | 'dedicated'
 }
 
 export type ToolCatalogGroup = {
@@ -233,4 +235,59 @@ export type ChatResponse = {
     result: { raw?: Record<string, unknown>; humanMessage?: string }
   }>
   references: ResultReference[]
+}
+
+// ─── Spending Types ─────────────────────────────────
+export type SpendingRecord = {
+  id: number
+  deploymentId: string
+  amountHbar: number
+  direction: 'outflow' | 'inflow'
+  toolName: string | null
+  txId: string | null
+  source: 'chat' | 'schedule' | 'trigger' | 'funding'
+  description: string | null
+  createdAt: string
+}
+
+export type AgentSpendingResponse = {
+  summary: { totalSpent: number; totalFunded: number; txCount: number }
+  burnRatePerDay: number
+  records: SpendingRecord[]
+}
+
+// ─── Schedule Types ──────────────────────────────────
+export type AgentSchedule = {
+  id: string
+  deploymentId: string
+  cronExpression: string
+  prompt: string
+  description: string
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type ScheduleExecution = {
+  id: number
+  scheduleId: string
+  deploymentId: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  resultSummary: string | null
+  errorMessage: string | null
+  startedAt: string | null
+  completedAt: string | null
+}
+
+// ─── Event Trigger Types ─────────────────────────────
+export type EventTrigger = {
+  id: string
+  deploymentId: string
+  eventType: 'hbar_inflow' | 'hcs_message' | 'token_transfer'
+  config: Record<string, unknown>
+  promptTemplate: string
+  enabled: boolean
+  lastCheckedAt: string | null
+  lastTriggeredAt: string | null
+  createdAt: string
 }

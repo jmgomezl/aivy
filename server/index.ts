@@ -1,6 +1,3 @@
-import fs from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import express from 'express'
@@ -21,16 +18,27 @@ import {
   coreTransactionQueryPluginToolNames,
 } from 'hedera-agent-kit'
 import {
+  AccountCreateTransaction,
   Client,
   ContractCreateFlow,
   ContractExecuteTransaction,
   ContractFunctionParameters,
   ContractId,
+  Hbar,
   PrivateKey,
 } from '@hashgraph/sdk'
 import { z } from 'zod'
+import { initMasterKey } from './crypto.js'
+import * as db from './db.js'
+import { initAuth, generateChallenge, consumeChallenge, verifyAccountExists, issueToken } from './auth.js'
+import { authMiddleware, requireAuth, type AuthRequest } from './middleware.js'
+import { deployLimiter, chatLimiter, toolLimiter, readLimiter } from './rateLimiter.js'
+import { startSchedule, stopSchedule, validateCron } from './scheduler.js'
+import { startPoller } from './eventPoller.js'
 
 dotenv.config()
+initMasterKey()
+initAuth()
 
 const config = {
   port: Number(process.env.SERVER_PORT ?? process.env.PORT ?? 3001),
@@ -60,6 +68,7 @@ type ActivityTone = 'system' | 'success' | 'vault'
 
 type DeploymentRecord = {
   id: string
+  userId: string
   templateId: string
   name: string
   room: string
@@ -75,13 +84,9 @@ type DeploymentRecord = {
   contractAddress: string | null
   deploymentTxId: string | null
   vaultCapHbar: number
-}
-
-type ActivityRecord = {
-  id: string
-  label: string
-  tone: ActivityTone
-  timestamp: string
+  agentAccountId: string | null
+  agentPrivateKey: string | null
+  walletType: 'platform' | 'dedicated'
 }
 
 type ToolResponse = {
@@ -155,6 +160,7 @@ const deploymentSchema = z.object({
   vaultCapHbar: z.number().min(0).max(100000).optional(),
   launchNote: z.string().max(240).optional(),
   capabilityGroups: z.array(capabilityGroupSchema).min(1),
+  walletType: z.enum(['platform', 'dedicated']).optional().default('platform'),
 })
 
 const runAgentSchema = z.object({
@@ -232,50 +238,12 @@ contract AivyVault {
 }
 `
 
-const deployments = new Map<string, DeploymentRecord>()
-const activityLog: ActivityRecord[] = []
-
-// ─── Persistence ─────────────────────────────────
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DATA_DIR = path.resolve(__dirname, '..', 'data')
-const DEPLOYMENTS_FILE = path.join(DATA_DIR, 'deployments.json')
-
-function saveDeployments() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
-    const entries = Object.fromEntries(deployments)
-    fs.writeFileSync(DEPLOYMENTS_FILE, JSON.stringify(entries, null, 2), 'utf-8')
-  } catch (err) {
-    console.error('[Aivy] Failed to save deployments:', err)
-  }
-}
-
-function loadDeployments() {
-  try {
-    if (!fs.existsSync(DEPLOYMENTS_FILE)) return
-    const raw = fs.readFileSync(DEPLOYMENTS_FILE, 'utf-8')
-    const entries = JSON.parse(raw) as Record<string, DeploymentRecord>
-    for (const [id, record] of Object.entries(entries)) {
-      deployments.set(id, record)
-    }
-    console.log(`[Aivy] Restored ${deployments.size} agent(s) from disk.`)
-  } catch (err) {
-    console.error('[Aivy] Failed to load deployments:', err)
-  }
-}
-
-loadDeployments()
+// Migrate old JSON deployments to SQLite on first run
+db.migrateFromJson()
+const startupDeployments = db.getAllDeployments()
+console.log(`[Aivy] ${startupDeployments.length} agent(s) loaded from database.`)
 
 // ─── Chat (OpenAI) ───────────────────────────────
-type ChatHistoryMessage = {
-  role: 'system' | 'user' | 'assistant' | 'tool'
-  content: string | null
-  tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>
-  tool_call_id?: string
-  name?: string
-}
-
-const chatHistories = new Map<string, ChatHistoryMessage[]>()
 const chatEnabled = !!process.env.OPENAI_API_KEY
 const openai = chatEnabled ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null
 
@@ -304,19 +272,25 @@ function buildAgentSystemPrompt(deployment: DeploymentRecord, userAccountId?: st
     mission: 'Help the user interact with the Hedera blockchain.',
   }
 
-  // Determine which account is "the user's account"
-  const primaryAccount = userAccountId || config.operatorAccountId
+  const agentWalletLines = deployment.walletType === 'dedicated' && deployment.agentAccountId
+    ? [
+        `Agent Wallet: ${deployment.agentAccountId} (this agent's own Hedera account)`,
+        'This agent operates with its own dedicated wallet and balance.',
+      ]
+    : []
 
   const accountLines = userAccountId
     ? [
         `User's Connected Wallet: ${userAccountId} (use for "my" queries — balance, tokens, account info)`,
         `Backend Operator: ${config.operatorAccountId} (used for signing transactions)`,
+        ...agentWalletLines,
         '',
         `IMPORTANT: When the user asks about "my balance", "my tokens", or "my account", always use the user's connected wallet: ${userAccountId}.`,
         `For any tool that requires an accountId parameter, default to "${userAccountId}" unless the user specifies a different account.`,
       ]
     : [
         `Operator Account: ${config.operatorAccountId}`,
+        ...agentWalletLines,
         '',
         'IMPORTANT: When the user asks about "my balance" or "my account", always use the operator account ID above.',
         `For any tool that requires an accountId parameter, use "${config.operatorAccountId}" unless the user specifies a different account.`,
@@ -1289,16 +1263,8 @@ const formatTimestamp = (date = new Date()) =>
   }).format(date)
 
 const pushActivity = (label: string, tone: ActivityTone) => {
-  activityLog.unshift({
-    id: `evt-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-    label,
-    tone,
-    timestamp: formatTimestamp(),
-  })
-
-  if (activityLog.length > 30) {
-    activityLog.length = 30
-  }
+  const id = `evt-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
+  db.pushActivity(id, label, tone, formatTimestamp())
 }
 
 const isConfigured = Boolean(config.operatorAccountId && config.operatorPrivateKey)
@@ -1324,6 +1290,36 @@ const createClient = () => {
 }
 
 const client = isConfigured ? createClient() : null
+
+/** Create a brand-new Hedera account funded from the operator for a dedicated agent. */
+const createAgentAccount = async (initialHbar = 1): Promise<{ accountId: string; privateKey: string }> => {
+  if (!client) throw new Error('Hedera client is not configured.')
+
+  const agentKey = PrivateKey.generateECDSA()
+  const tx = await new AccountCreateTransaction()
+    .setKey(agentKey.publicKey)
+    .setInitialBalance(new Hbar(initialHbar))
+    .setTransactionMemo('Aivy agent account')
+    .execute(client)
+
+  const receipt = await tx.getReceipt(client)
+  const accountId = receipt.accountId?.toString()
+  if (!accountId) throw new Error('Account creation receipt missing accountId.')
+
+  return { accountId, privateKey: agentKey.toStringRaw() }
+}
+
+/** Build a Hedera Client configured with a per-agent key pair. */
+const createAgentClient = (accountId: string, privateKey: string): Client => {
+  const agentClient = config.network === 'mainnet' ? Client.forMainnet() : Client.forTestnet()
+  const key = privateKey.startsWith('0x')
+    ? PrivateKey.fromStringECDSA(privateKey)
+    : privateKey.startsWith('302e')
+      ? PrivateKey.fromStringECDSA(privateKey)
+      : PrivateKey.fromStringECDSA(privateKey)
+  agentClient.setOperator(accountId, key)
+  return agentClient
+}
 
 const compileVault = () => {
   const input = {
@@ -1416,13 +1412,14 @@ let toolCatalogCache: {
   workflowsByTemplate: Record<string, ToolWorkflow[]>
 } | null = null
 
-const getToolkit = (tools = allToolNames) => {
-  if (!client) {
+const getToolkit = (tools = allToolNames, agentClient?: Client) => {
+  const c = agentClient ?? client
+  if (!c) {
     throw new Error('Hedera client is not configured.')
   }
 
   return new HederaAIToolkit({
-    client,
+    client: c,
     configuration: {
       tools,
       context: {
@@ -1470,8 +1467,8 @@ const buildToolCatalog = () => {
   return toolCatalogCache
 }
 
-const executeTool = async (toolName: string, params: Record<string, unknown>) => {
-  const toolkit = getToolkit()
+const executeTool = async (toolName: string, params: Record<string, unknown>, agentClient?: Client) => {
+  const toolkit = getToolkit(undefined, agentClient)
   const tool = toolkit.getTools()[toolName]
   if (!tool) {
     throw new Error(`Tool ${toolName} is not available.`)
@@ -1493,6 +1490,20 @@ const executeTool = async (toolName: string, params: Record<string, unknown>) =>
   }
 
   return result as ToolResponse
+}
+
+/** Detect HBAR spending from tool name + params */
+function detectSpendingAmount(toolName: string, params: Record<string, unknown>): number {
+  if (toolName === 'transfer_hbar_tool' && Array.isArray(params.transfers)) {
+    return (params.transfers as Array<{ amount?: number }>).reduce(
+      (sum, t) => sum + Math.abs(Number(t.amount ?? 0)),
+      0,
+    )
+  }
+  if (toolName === 'create_account_tool' && typeof params.initialBalance === 'number') {
+    return params.initialBalance
+  }
+  return 0
 }
 
 const makeMirrorUrl = (type: ResultReference['type'], value: string) => {
@@ -1779,7 +1790,7 @@ const fetchAllTopicMessages = async (topicId: string) => {
 }
 
 const buildStats = () => {
-  const items = [...deployments.values()]
+  const items = db.getAllDeployments()
 
   return {
     connectedAgents: items.length,
@@ -1795,8 +1806,18 @@ const buildStats = () => {
   }
 }
 
-const buildLivePayload = async () => {
-  const deploymentItems = [...deployments.values()]
+/** Strip agentPrivateKey and userId before sending to frontend */
+const safeDeployment = (d: DeploymentRecord) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { agentPrivateKey, userId: _uid, ...rest } = d
+  return rest
+}
+
+const buildLivePayload = async (userId?: string | null) => {
+  const allItems = db.getAllDeployments()
+  const deploymentItems = userId && userId !== 'demo' && userId !== 'anonymous'
+    ? allItems.filter((d) => d.userId === userId || d.userId === 'legacy' || d.userId === 'demo')
+    : allItems
   const topicMessages = await Promise.all(
     deploymentItems
       .filter((item) => item.topicId)
@@ -1804,6 +1825,7 @@ const buildLivePayload = async () => {
       .map((item) => fetchTopicMessages(item.topicId as string)),
   )
   const mirrorTransactions = await fetchMirrorTransactions()
+  const recentActivity = db.getActivity(14)
 
   return {
     configured: isConfigured || demoMode,
@@ -1813,8 +1835,8 @@ const buildLivePayload = async () => {
     operatorAccountId: config.operatorAccountId || (demoMode ? demoAccountId : null),
     mirrorNodeUrl: config.mirrorNodeUrl,
     stats: buildStats(),
-    deployments: deploymentItems,
-    activity: [...activityLog, ...mirrorTransactions, ...topicMessages.flat()]
+    deployments: deploymentItems.map(safeDeployment),
+    activity: [...recentActivity, ...mirrorTransactions, ...topicMessages.flat()]
       .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
       .slice(0, 14),
     coordinations: coordinationLog.slice(0, 10),
@@ -1825,22 +1847,62 @@ const app = express()
 
 app.use(cors())
 app.use(express.json())
+app.use(authMiddleware(demoMode))
 
-app.get('/api/live', async (_request, response) => {
+// ─── Auth Routes ────────────────────────────────────
+const authChallengeSchema = z.object({ accountId: z.string().regex(/^0\.0\.\d+$/) })
+
+app.post('/api/auth/challenge', (request, response) => {
+  const parsed = authChallengeSchema.safeParse(request.body)
+  if (!parsed.success) {
+    response.status(400).json({ error: 'Invalid account ID format.' })
+    return
+  }
+  const result = generateChallenge(parsed.data.accountId)
+  response.json(result)
+})
+
+app.post('/api/auth/verify', async (request, response) => {
+  const parsed = authChallengeSchema.safeParse(request.body)
+  if (!parsed.success) {
+    response.status(400).json({ error: 'Invalid account ID format.' })
+    return
+  }
+  const { accountId } = parsed.data
+  const nonce = consumeChallenge(accountId)
+  if (!nonce) {
+    response.status(400).json({ error: 'Invalid or expired challenge. Request a new one.' })
+    return
+  }
+
+  // Verify the account exists on Hedera
+  const exists = demoMode || await verifyAccountExists(accountId, config.mirrorNodeUrl)
+  if (!exists) {
+    response.status(400).json({ error: 'Account not found on Hedera.' })
+    return
+  }
+
+  const user = db.getOrCreateUser(accountId)
+  const token = issueToken(user.id, accountId)
+  response.json({ token, user: { id: user.id, accountId: user.hederaAccountId, displayName: user.displayName } })
+})
+
+app.get('/api/live', readLimiter, async (request, response) => {
   try {
-    response.json(await buildLivePayload())
+    const userId = (request as AuthRequest).userId
+    response.json(await buildLivePayload(userId))
   } catch (error) {
     response.status(500).json({
       configured: isConfigured,
       error: error instanceof Error ? error.message : 'Unknown live payload error.',
       stats: buildStats(),
-      deployments: [...deployments.values()],
-      activity: activityLog,
+      deployments: db.getAllDeployments().map(safeDeployment),
+      activity: db.getActivity(14),
     })
   }
 })
 
-app.get('/api/tool-catalog', (_request, response) => {
+app.get('/api/tool-catalog', readLimiter, (_request, response) => {
   try {
     response.json(buildToolCatalog())
   } catch (error) {
@@ -1850,7 +1912,7 @@ app.get('/api/tool-catalog', (_request, response) => {
   }
 })
 
-app.post('/api/deploy', async (request, response) => {
+app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) => {
   const parsed = deploymentSchema.safeParse(request.body)
   if (!parsed.success) {
     response.status(400).json({ error: parsed.error.flatten() })
@@ -1867,6 +1929,7 @@ app.post('/api/deploy', async (request, response) => {
       vaultCapHbar: requestedVaultCapHbar,
       launchNote,
       capabilityGroups: chosenGroups,
+      walletType,
     } = parsed.data
     const capabilitySelection =
       chosenGroups.length > 0
@@ -1879,12 +1942,18 @@ app.post('/api/deploy', async (request, response) => {
     let deploymentTxId = ''
     let contract = { transactionId: null as string | null, contractId: null as string | null, contractAddress: null as string | null }
     let balanceSnapshot: unknown = null
+    let agentAccountId: string | null = null
+    let agentPrivateKey: string | null = null
 
     if (demoMode) {
       // Demo mode: generate fake IDs without hitting Hedera
       topicId = nextDemoTopicId()
       deploymentTxId = nextDemoTxId()
       balanceSnapshot = 142.5
+      if (walletType === 'dedicated') {
+        agentAccountId = nextDemoAccountId()
+        agentPrivateKey = '302e_demo_agent_key_' + agentAccountId
+      }
       if (vaultProtected && vaultCapHbar > 0) {
         contract = {
           transactionId: nextDemoTxId(),
@@ -1898,6 +1967,14 @@ app.post('/api/deploy', async (request, response) => {
           error: 'Hedera credentials are missing. Set HEDERA_ACCOUNT_ID and HEDERA_PRIVATE_KEY in .env.',
         })
         return
+      }
+
+      // Create dedicated agent account if requested
+      if (walletType === 'dedicated') {
+        const agentAccount = await createAgentAccount()
+        agentAccountId = agentAccount.accountId
+        agentPrivateKey = agentAccount.privateKey
+        console.log(`[Aivy] Created dedicated agent account: ${agentAccountId}`)
       }
 
       const balanceResult = await executeTool(
@@ -1921,9 +1998,10 @@ app.post('/api/deploy', async (request, response) => {
           : { transactionId: null, contractId: null, contractAddress: null }
 
       if (topicId) {
+        const walletInfo = agentAccountId ? ` Dedicated wallet: ${agentAccountId}.` : ''
         await executeTool(coreConsensusPluginToolNames.SUBMIT_TOPIC_MESSAGE_TOOL, {
           topicId,
-          message: `[Aivy] ${name} deployed in ${room}. Guardrail: ${guardrail}. ${launchNote ? `${launchNote}. ` : ''}Operator balance snapshot: ${balanceResult.raw?.hbarBalance ?? 'unknown'} HBAR.`,
+          message: `[Aivy] ${name} deployed in ${room}. Guardrail: ${guardrail}. ${launchNote ? `${launchNote}. ` : ''}Operator balance snapshot: ${balanceResult.raw?.hbarBalance ?? 'unknown'} HBAR.${walletInfo}`,
           transactionMemo: `Aivy launch ${name}`,
         })
       }
@@ -1931,6 +2009,7 @@ app.post('/api/deploy', async (request, response) => {
 
     const deployment: DeploymentRecord = {
       id: `${templateId}-${Date.now()}`,
+      userId: (request as AuthRequest).userId ?? 'anonymous',
       templateId,
       name,
       room,
@@ -1948,23 +2027,26 @@ app.post('/api/deploy', async (request, response) => {
       contractAddress: contract.contractAddress,
       deploymentTxId: deploymentTxId || null,
       vaultCapHbar,
+      agentAccountId,
+      agentPrivateKey,
+      walletType,
     }
 
-    deployments.set(deployment.id, deployment)
-    saveDeployments()
+    db.insertDeployment(deployment)
     pushActivity(
       `${name} deployed with ${capabilitySelection.length} capability bundles and ${vaultProtected ? 'vault guardrails' : 'direct execution permissions'}.`,
       vaultProtected ? 'vault' : 'success',
     )
 
     response.status(201).json({
-      deployment,
+      deployment: safeDeployment(deployment),
       balanceSnapshot,
       references: extractResultReferences({
         topicId: topicId || undefined,
         transactionId: (contract.transactionId ?? deploymentTxId) || undefined,
         contractId: contract.contractId ?? undefined,
         contractAddress: contract.contractAddress ?? undefined,
+        accountId: agentAccountId ?? undefined,
       }),
     })
   } catch (error) {
@@ -1974,14 +2056,128 @@ app.post('/api/deploy', async (request, response) => {
   }
 })
 
-app.post('/api/agents/:agentId/run', async (request, response) => {
+app.get('/api/agents/:agentId/wallet', readLimiter, async (request, response) => {
+  const deployment = db.getDeployment(request.params.agentId)
+  if (!deployment) {
+    response.status(404).json({ error: 'Deployment not found.' })
+    return
+  }
+
+  try {
+    let balance: number | null = null
+    const accountId = deployment.agentAccountId ?? (deployment.walletType === 'platform' ? (config.operatorAccountId || demoAccountId) : null)
+
+    if (accountId) {
+      if (demoMode) {
+        balance = Math.round((50 + Math.random() * 200) * 100) / 100
+      } else {
+        const result = await executeTool(
+          coreAccountQueryPluginToolNames.GET_HBAR_BALANCE_QUERY_TOOL,
+          { accountId },
+        )
+        balance = typeof result.raw?.hbarBalance === 'number' ? result.raw.hbarBalance : null
+      }
+    }
+
+    response.json({
+      walletType: deployment.walletType,
+      agentAccountId: accountId,
+      balance,
+    })
+  } catch (error) {
+    response.status(500).json({
+      error: error instanceof Error ? error.message : 'Wallet query failed.',
+    })
+  }
+})
+
+app.get('/api/agents/:agentId/spending', readLimiter, (request, response) => {
+  const deployment = db.getDeployment(request.params.agentId)
+  if (!deployment) {
+    response.status(404).json({ error: 'Deployment not found.' })
+    return
+  }
+
+  const summary = db.getSpendingSummary(deployment.id)
+  const records = db.getSpendingByAgent(deployment.id, 50)
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const recentSpending = db.getRecentSpending(deployment.id, sevenDaysAgo)
+  const totalRecentSpent = recentSpending
+    .filter(s => s.direction === 'outflow')
+    .reduce((s, r) => s + r.amountHbar, 0)
+  const daysSinceFirst = recentSpending.length > 0
+    ? Math.max(1, (Date.now() - new Date(recentSpending[0].createdAt).getTime()) / (24 * 60 * 60 * 1000))
+    : 1
+  const burnRatePerDay = Math.round((totalRecentSpent / daysSinceFirst) * 100) / 100
+
+  response.json({ summary, burnRatePerDay, records })
+})
+
+const fundSchema = z.object({
+  amountHbar: z.number().min(0.01).max(10000),
+  txId: z.string().min(5),
+  funderAccountId: z.string().regex(/^0\.0\.\d+$/),
+})
+
+app.post('/api/agents/:agentId/fund', requireAuth, toolLimiter, async (request, response) => {
+  const parsed = fundSchema.safeParse(request.body)
+  if (!parsed.success) {
+    response.status(400).json({ error: parsed.error.flatten() })
+    return
+  }
+
+  const deployment = db.getDeployment(request.params.agentId)
+  if (!deployment) {
+    response.status(404).json({ error: 'Deployment not found.' })
+    return
+  }
+
+  db.recordSpending(
+    deployment.id,
+    parsed.data.amountHbar,
+    'inflow',
+    null,
+    parsed.data.txId,
+    'funding',
+    `Funded by ${parsed.data.funderAccountId}`,
+  )
+
+  if (deployment.topicId && !demoMode) {
+    try {
+      await executeTool(coreConsensusPluginToolNames.SUBMIT_TOPIC_MESSAGE_TOOL, {
+        topicId: deployment.topicId,
+        message: `[Aivy Funding] ${parsed.data.funderAccountId} funded ${deployment.name} with ${parsed.data.amountHbar} HBAR. Tx: ${parsed.data.txId}`,
+        transactionMemo: 'Aivy agent funding',
+      })
+    } catch {
+      // Non-critical
+    }
+  }
+
+  pushActivity(
+    `${deployment.name} funded with ${parsed.data.amountHbar} HBAR by ${parsed.data.funderAccountId}`,
+    'vault',
+  )
+
+  response.json({
+    recorded: true,
+    funding: {
+      amountHbar: parsed.data.amountHbar,
+      txId: parsed.data.txId,
+      funderAccountId: parsed.data.funderAccountId,
+    },
+  })
+})
+
+app.post('/api/agents/:agentId/run', requireAuth, toolLimiter, async (request, response) => {
   const parsed = runAgentSchema.safeParse(request.body)
   if (!parsed.success) {
     response.status(400).json({ error: parsed.error.flatten() })
     return
   }
 
-  const deployment = deployments.get(request.params.agentId)
+  const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) {
     response.status(404).json({ error: 'Deployment not found.' })
     return
@@ -2019,8 +2215,7 @@ app.post('/api/agents/:agentId/run', async (request, response) => {
     deployment.executions += 1
     deployment.status = deployment.vaultProtected ? 'guarded' : 'active'
     deployment.lastAction = `Executed ${action} on Hedera ${demoMode ? 'testnet (demo)' : config.network}`
-    deployments.set(deployment.id, deployment)
-    saveDeployments()
+    db.updateDeployment(deployment)
 
     pushActivity(
       `${deployment.name} executed ${action} with ${deployment.vaultProtected ? 'vault policy enforcement' : 'direct execution'}.`,
@@ -2028,7 +2223,7 @@ app.post('/api/agents/:agentId/run', async (request, response) => {
     )
 
     response.json({
-      deployment,
+      deployment: safeDeployment(deployment),
       result: {
         humanMessage: `${deployment.name} executed ${action}.`,
         raw: {
@@ -2050,14 +2245,14 @@ app.post('/api/agents/:agentId/run', async (request, response) => {
   }
 })
 
-app.post('/api/agents/:agentId/tools/:toolName', async (request, response) => {
+app.post('/api/agents/:agentId/tools/:toolName', requireAuth, toolLimiter, async (request, response) => {
   const parsed = invokeToolSchema.safeParse(request.body)
   if (!parsed.success) {
     response.status(400).json({ error: parsed.error.flatten() })
     return
   }
 
-  const deployment = deployments.get(request.params.agentId)
+  const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) {
     response.status(404).json({ error: 'Deployment not found.' })
     return
@@ -2089,13 +2284,19 @@ app.post('/api/agents/:agentId/tools/:toolName', async (request, response) => {
       deployment.topicId = String(result.raw?.topicId ?? deployment.topicId ?? '')
     }
 
+    // Record HBAR spending
+    const spendingAmount = detectSpendingAmount(toolName, parsed.data.params)
+    if (spendingAmount > 0) {
+      const txId = typeof result.raw?.transactionId === 'string' ? result.raw.transactionId : null
+      db.recordSpending(deployment.id, spendingAmount, 'outflow', toolName, txId, 'chat', humanMessage)
+    }
+
     deployment.lastAction = label
     if (!isQuery) {
       deployment.executions += 1
       deployment.status = deployment.vaultProtected ? 'guarded' : 'active'
     }
-    deployments.set(deployment.id, deployment)
-    saveDeployments()
+    db.updateDeployment(deployment)
 
     pushActivity(
       `${deployment.name}: ${humanMessage}`,
@@ -2103,7 +2304,7 @@ app.post('/api/agents/:agentId/tools/:toolName', async (request, response) => {
     )
 
     response.json({
-      deployment,
+      deployment: safeDeployment(deployment),
       tool: {
         name: toolName,
         label,
@@ -2120,14 +2321,14 @@ app.post('/api/agents/:agentId/tools/:toolName', async (request, response) => {
   }
 })
 
-app.post('/api/agents/:agentId/pause', async (request, response) => {
+app.post('/api/agents/:agentId/pause', requireAuth, async (request, response) => {
   const parsed = pauseSchema.safeParse(request.body)
   if (!parsed.success) {
     response.status(400).json({ error: parsed.error.flatten() })
     return
   }
 
-  const deployment = deployments.get(request.params.agentId)
+  const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) {
     response.status(404).json({ error: 'Deployment not found.' })
     return
@@ -2151,8 +2352,7 @@ app.post('/api/agents/:agentId/pause', async (request, response) => {
     deployment.lastAction = parsed.data.paused
       ? 'Execution halted by operator'
       : 'Execution resumed with current guardrails'
-    deployments.set(deployment.id, deployment)
-    saveDeployments()
+    db.updateDeployment(deployment)
 
     pushActivity(
       `${deployment.name} ${parsed.data.paused ? 'paused' : 'resumed'} by operator.`,
@@ -2160,7 +2360,7 @@ app.post('/api/agents/:agentId/pause', async (request, response) => {
     )
 
     response.json({
-      deployment,
+      deployment: safeDeployment(deployment),
       result: {
         humanMessage: `${deployment.name} ${parsed.data.paused ? 'paused' : 'resumed'}.`,
         raw: {
@@ -2180,23 +2380,21 @@ app.post('/api/agents/:agentId/pause', async (request, response) => {
   }
 })
 
-app.delete('/api/agents/:agentId', (request, response) => {
-  const deployment = deployments.get(request.params.agentId)
+app.delete('/api/agents/:agentId', requireAuth, (request, response) => {
+  const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) {
     response.status(404).json({ error: 'Deployment not found.' })
     return
   }
 
-  chatHistories.delete(request.params.agentId)
-  deployments.delete(request.params.agentId)
-  saveDeployments()
+  db.deleteDeployment(request.params.agentId)
   pushActivity(`${deployment.name} removed from the Aivy floor.`, 'system')
   response.status(204).end()
 })
 
 // ─── Export Audit Report ──────────────────────────────
-app.get('/api/agents/:agentId/export-audit', async (request, response) => {
-  const deployment = deployments.get(request.params.agentId)
+app.get('/api/agents/:agentId/export-audit', readLimiter, async (request, response) => {
+  const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) {
     response.status(404).json({ error: 'Deployment not found.' })
     return
@@ -2213,9 +2411,7 @@ app.get('/api/agents/:agentId/export-audit', async (request, response) => {
       content: Buffer.from(msg.message, 'base64').toString('utf8'),
     }))
 
-    const agentActivity = activityLog.filter((event) =>
-      event.label.toLowerCase().includes(deployment.name.toLowerCase()),
-    )
+    const agentActivity = db.getActivityForAgent(deployment.name)
 
     const auditReport = {
       exportedAt: new Date().toISOString(),
@@ -2262,14 +2458,14 @@ const chatSchema = z.object({
   userAccountId: z.string().regex(/^0\.0\.\d+$/).optional(),
 })
 
-app.post('/api/agents/:agentId/chat', async (request, response) => {
+app.post('/api/agents/:agentId/chat', requireAuth, chatLimiter, async (request, response) => {
   const parsed = chatSchema.safeParse(request.body)
   if (!parsed.success) {
     response.status(400).json({ error: parsed.error.flatten() })
     return
   }
 
-  const deployment = deployments.get(request.params.agentId)
+  const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) {
     response.status(404).json({ error: 'Deployment not found.' })
     return
@@ -2293,11 +2489,15 @@ app.post('/api/agents/:agentId/chat', async (request, response) => {
   try {
     const userAccountId = parsed.data.userAccountId
 
+    // Resolve per-agent client for dedicated wallets
+    const agentClient = deployment.walletType === 'dedicated' && deployment.agentAccountId && deployment.agentPrivateKey
+      ? createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey)
+      : undefined
+
     // Get or create chat history (always refresh system prompt with user context)
-    let history = chatHistories.get(deployment.id)
-    if (!history) {
+    let history = db.getChatHistory(deployment.id)
+    if (history.length === 0) {
       history = [{ role: 'system', content: buildAgentSystemPrompt(deployment, userAccountId) }]
-      chatHistories.set(deployment.id, history)
     } else {
       // Always update system prompt to reflect latest deployment state + user wallet
       history[0] = { role: 'system', content: buildAgentSystemPrompt(deployment, userAccountId) }
@@ -2380,11 +2580,18 @@ app.post('/api/agents/:agentId/chat', async (request, response) => {
           try {
             const result = demoMode
               ? getDemoToolResponse(fnName, fnArgs)
-              : await executeTool(fnName, fnArgs)
+              : await executeTool(fnName, fnArgs, agentClient)
             console.log(`[Chat] ${deployment.name} tool result:`, JSON.stringify({ humanMessage: result.humanMessage, raw: result.raw }))
             const references = extractResultReferences(result.raw)
             collectedToolCalls.push({ toolName: fnName, params: fnArgs, result })
             collectedReferences.push(...references)
+
+            // Record HBAR spending
+            const spendingAmount = detectSpendingAmount(fnName, fnArgs)
+            if (spendingAmount > 0) {
+              const txId = typeof result.raw?.transactionId === 'string' ? result.raw.transactionId : null
+              db.recordSpending(deployment.id, spendingAmount, 'outflow', fnName, txId, 'chat', result.humanMessage ?? null)
+            }
 
             // Feature 4: Agent-to-agent coordination checks
             if (result.raw) {
@@ -2398,8 +2605,7 @@ app.post('/api/agents/:agentId/chat', async (request, response) => {
               deployment.executions += 1
               deployment.status = deployment.vaultProtected ? 'guarded' : 'active'
               deployment.lastAction = titleCase(fnName)
-              deployments.set(deployment.id, deployment)
-              saveDeployments()
+              db.updateDeployment(deployment)
             }
 
             pushActivity(
@@ -2431,8 +2637,8 @@ app.post('/api/agents/:agentId/chat', async (request, response) => {
     if (history.length > 42) {
       const system = history[0]
       history = [system, ...history.slice(-40)]
-      chatHistories.set(deployment.id, history)
     }
+    db.replaceChatHistory(deployment.id, history)
 
     // Extract final assistant reply
     const lastAssistant = [...history].reverse().find((m) => m.role === 'assistant' && m.content)
@@ -2455,6 +2661,189 @@ app.post('/api/agents/:agentId/chat', async (request, response) => {
     })
   }
 })
+
+// ═══════════════════════════════════════════════════
+// Shared chat loop (used by chat endpoint, schedules, triggers)
+// ═══════════════════════════════════════════════════
+
+type ChatLoopResult = {
+  reply: string
+  toolCalls: Array<{ toolName: string; params: Record<string, unknown>; result: { raw?: Record<string, unknown>; humanMessage?: string } }>
+  references: ResultReference[]
+}
+
+async function runChatLoop(
+  deployment: DeploymentRecord,
+  history: db.ChatMessage[],
+  agentClient?: Client,
+  source: 'chat' | 'schedule' | 'trigger' = 'chat',
+): Promise<ChatLoopResult> {
+  if (!openai) throw new Error('OpenAI is not configured.')
+
+  const catalog = buildToolCatalog()
+  const enabledGroups = new Set(deployment.capabilityGroups)
+  const agentTools = catalog.tools.filter((t) => enabledGroups.has(t.groupId))
+  const openaiTools = buildOpenAITools(agentTools)
+  const agentToolNames = new Set(agentTools.map((t) => t.name))
+
+  const collectedToolCalls: ChatLoopResult['toolCalls'] = []
+  const collectedReferences: ResultReference[] = []
+
+  let iterations = 0
+  const maxIterations = 5
+
+  while (iterations < maxIterations) {
+    iterations++
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: history as OpenAI.ChatCompletionMessageParam[],
+      tools: openaiTools.length > 0 ? openaiTools : undefined,
+      temperature: 0.3,
+      max_tokens: 1024,
+    })
+
+    const choice = completion.choices[0]
+    if (!choice) break
+
+    const assistantMessage = choice.message
+    const fnToolCalls = (assistantMessage.tool_calls ?? []).filter(
+      (tc): tc is Extract<typeof tc, { type: 'function' }> => tc.type === 'function',
+    )
+
+    history.push({
+      role: 'assistant',
+      content: assistantMessage.content,
+      tool_calls: fnToolCalls.length > 0
+        ? fnToolCalls.map((tc) => ({
+            id: tc.id,
+            type: 'function' as const,
+            function: { name: tc.function.name, arguments: tc.function.arguments },
+          }))
+        : undefined,
+    })
+
+    if (fnToolCalls.length === 0) break
+
+    for (const toolCall of fnToolCalls) {
+      const fnName = toolCall.function.name
+      let fnArgs: Record<string, unknown> = {}
+      try { fnArgs = JSON.parse(toolCall.function.arguments) as Record<string, unknown> } catch { /* empty */ }
+
+      let toolResultContent: string
+      console.log(`[${source}] ${deployment.name} calling tool: ${fnName}`, JSON.stringify(fnArgs))
+
+      if (!agentToolNames.has(fnName)) {
+        toolResultContent = JSON.stringify({ error: `Tool ${fnName} is not available for this agent.` })
+      } else {
+        try {
+          const result = demoMode
+            ? getDemoToolResponse(fnName, fnArgs)
+            : await executeTool(fnName, fnArgs, agentClient)
+          const references = extractResultReferences(result.raw)
+          collectedToolCalls.push({ toolName: fnName, params: fnArgs, result })
+          collectedReferences.push(...references)
+
+          const spendingAmount = detectSpendingAmount(fnName, fnArgs)
+          if (spendingAmount > 0) {
+            const txId = typeof result.raw?.transactionId === 'string' ? result.raw.transactionId : null
+            db.recordSpending(deployment.id, spendingAmount, 'outflow', fnName, txId, source, result.humanMessage ?? null)
+          }
+
+          if (result.raw) runCoordinationChecks(deployment, { ...result.raw, humanMessage: result.humanMessage })
+
+          const groupId = toolNameToGroup.get(fnName)
+          const isQuery = groupId ? queryGroupIds.has(groupId) : true
+          if (!isQuery) {
+            deployment.executions += 1
+            deployment.status = deployment.vaultProtected ? 'guarded' : 'active'
+            deployment.lastAction = titleCase(fnName)
+            db.updateDeployment(deployment)
+          }
+
+          pushActivity(
+            `${deployment.name} (${source}): ${result.humanMessage ?? titleCase(fnName)}`,
+            isQuery ? 'system' : deployment.vaultProtected ? 'vault' : 'success',
+          )
+
+          toolResultContent = JSON.stringify({ humanMessage: result.humanMessage, raw: result.raw })
+        } catch (err) {
+          toolResultContent = JSON.stringify({ error: err instanceof Error ? err.message : 'Tool execution failed.' })
+        }
+      }
+
+      history.push({ role: 'tool', content: toolResultContent, tool_call_id: toolCall.id, name: fnName })
+    }
+  }
+
+  // Trim history
+  if (history.length > 42) {
+    const system = history[0]
+    history = [system, ...history.slice(-40)]
+  }
+  db.replaceChatHistory(deployment.id, history)
+
+  const lastAssistant = [...history].reverse().find((m) => m.role === 'assistant' && m.content)
+  const reply = lastAssistant?.content ?? 'I completed the requested actions.'
+
+  const uniqueRefs = collectedReferences.filter(
+    (ref, idx, all) => idx === all.findIndex((r) => r.label === ref.label && r.value === ref.value),
+  )
+
+  return { reply, toolCalls: collectedToolCalls, references: uniqueRefs }
+}
+
+/** Execute a scheduled or trigger-based prompt against an agent */
+async function executeScheduledPrompt(
+  sourceId: string,
+  deploymentId: string,
+  prompt: string,
+  source: 'schedule' | 'trigger' = 'schedule',
+): Promise<string> {
+  const deployment = db.getDeployment(deploymentId)
+  if (!deployment || deployment.status === 'paused') {
+    return 'Agent is paused or not found.'
+  }
+
+  const execId = source === 'schedule'
+    ? db.insertScheduleExecution(sourceId, deploymentId)
+    : 0
+
+  try {
+    const agentClient = deployment.walletType === 'dedicated' && deployment.agentAccountId && deployment.agentPrivateKey
+      ? createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey)
+      : undefined
+
+    let history = db.getChatHistory(deploymentId)
+    if (history.length === 0) {
+      history = [{ role: 'system', content: buildAgentSystemPrompt(deployment) }]
+    } else {
+      history[0] = { role: 'system', content: buildAgentSystemPrompt(deployment) }
+    }
+
+    history.push({ role: 'user', content: `[AUTOMATED ${source.toUpperCase()}] ${prompt}` })
+
+    const result = await runChatLoop(deployment, history, agentClient, source)
+
+    if (execId > 0) {
+      db.updateScheduleExecution(execId, 'completed', result.reply.slice(0, 500), null)
+    }
+
+    pushActivity(
+      `${deployment.name} (${source}): Completed automated task`,
+      'system',
+    )
+
+    return result.reply
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : 'Execution failed'
+    if (execId > 0) {
+      db.updateScheduleExecution(execId, 'failed', null, errMsg)
+    }
+    console.error(`[${source}] Failed for deployment ${deploymentId}:`, errMsg)
+    return errMsg
+  }
+}
 
 // ═══════════════════════════════════════════════════
 // Feature 2: Multi-agent chat routing
@@ -2504,7 +2893,7 @@ function routeMessageToAgent(
   }
 
   // Find the deployment that matches the best-scoring template
-  const deploymentList = agentIds.map((id) => deployments.get(id)).filter(Boolean) as DeploymentRecord[]
+  const deploymentList = agentIds.map((id) => db.getDeployment(id)).filter((d): d is DeploymentRecord => d !== null)
 
   // Sort by score descending
   const ranked = deploymentList.sort((a, b) => {
@@ -2517,7 +2906,7 @@ function routeMessageToAgent(
   return ranked[0]?.id ?? agentIds[0]
 }
 
-app.post('/api/chat/route', async (request, response) => {
+app.post('/api/chat/route', requireAuth, chatLimiter, async (request, response) => {
   const parsed = routeSchema.safeParse(request.body)
   if (!parsed.success) {
     response.status(400).json({ error: parsed.error.flatten() })
@@ -2528,7 +2917,7 @@ app.post('/api/chat/route', async (request, response) => {
 
   // Route to the best agent
   const targetId = routeMessageToAgent(message, agentIds)
-  const deployment = deployments.get(targetId)
+  const deployment = db.getDeployment(targetId)
   if (!deployment) {
     response.status(404).json({ error: 'No matching agent found.' })
     return
@@ -2550,11 +2939,15 @@ app.post('/api/chat/route', async (request, response) => {
   }
 
   try {
+    // Resolve per-agent client for dedicated wallets
+    const routeAgentClient = deployment.walletType === 'dedicated' && deployment.agentAccountId && deployment.agentPrivateKey
+      ? createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey)
+      : undefined
+
     // Reuse the chat logic: build prompt, call OpenAI
-    let history = chatHistories.get(deployment.id)
-    if (!history) {
+    let history = db.getChatHistory(deployment.id)
+    if (history.length === 0) {
       history = [{ role: 'system', content: buildAgentSystemPrompt(deployment, userAccountId) }]
-      chatHistories.set(deployment.id, history)
     } else {
       history[0] = { role: 'system', content: buildAgentSystemPrompt(deployment, userAccountId) }
     }
@@ -2616,7 +3009,7 @@ app.post('/api/chat/route', async (request, response) => {
           try {
             const result = demoMode
               ? getDemoToolResponse(fnName, fnArgs)
-              : await executeTool(fnName, fnArgs)
+              : await executeTool(fnName, fnArgs, routeAgentClient)
             collectedToolCalls.push({ toolName: fnName, params: fnArgs, result })
 
             // Feature 4: Agent-to-agent coordination checks
@@ -2630,8 +3023,7 @@ app.post('/api/chat/route', async (request, response) => {
               deployment.executions += 1
               deployment.status = deployment.vaultProtected ? 'guarded' : 'active'
               deployment.lastAction = titleCase(fnName)
-              deployments.set(deployment.id, deployment)
-              saveDeployments()
+              db.updateDeployment(deployment)
             }
 
             pushActivity(
@@ -2652,8 +3044,8 @@ app.post('/api/chat/route', async (request, response) => {
     if (history.length > 42) {
       const system = history[0]
       history = [system, ...history.slice(-40)]
-      chatHistories.set(deployment.id, history)
     }
+    db.replaceChatHistory(deployment.id, history)
 
     const lastAssistant = [...history].reverse().find((m) => m.role === 'assistant' && m.content)
     const reply = lastAssistant?.content ?? 'Done.'
@@ -2755,7 +3147,7 @@ function runCoordinationChecks(
   raw: Record<string, unknown>,
 ): void {
   try {
-    const activeDeployments = [...deployments.values()].filter(d => d.status !== 'paused')
+    const activeDeployments = db.getAllDeployments().filter(d => d.status !== 'paused')
 
     for (const rule of coordinationRules) {
       if (sourceDeployment.templateId !== rule.sourceTemplate) continue
@@ -2780,22 +3172,12 @@ function runCoordinationChecks(
 
       pushActivity(`${sourceDeployment.name} → ${target.name}: ${rule.actionDescription}`, 'vault')
 
-      const targetHistory = chatHistories.get(target.id)
-      if (targetHistory) {
-        targetHistory.push({ role: 'system', content: rule.buildMessage(raw, sourceDeployment) })
-        coordEvent.status = 'completed'
-      }
+      db.appendChatMessage(target.id, { role: 'system', content: rule.buildMessage(raw, sourceDeployment) })
+      coordEvent.status = 'completed'
     }
   } catch {
     // Non-critical
   }
-}
-
-function checkLowBalanceAlert(
-  sourceDeployment: DeploymentRecord,
-  raw: Record<string, unknown>,
-): void {
-  runCoordinationChecks(sourceDeployment, raw)
 }
 
 // ─── Explicit Coordination Endpoint ──────────────────
@@ -2804,20 +3186,20 @@ const coordinateSchema = z.object({
   message: z.string().min(1).max(500),
 })
 
-app.post('/api/agents/:agentId/coordinate', async (request, response) => {
+app.post('/api/agents/:agentId/coordinate', requireAuth, async (request, response) => {
   const parsed = coordinateSchema.safeParse(request.body)
   if (!parsed.success) {
     response.status(400).json({ error: parsed.error.flatten() })
     return
   }
 
-  const source = deployments.get(request.params.agentId)
+  const source = db.getDeployment(request.params.agentId)
   if (!source) {
     response.status(404).json({ error: 'Source agent not found.' })
     return
   }
 
-  const target = deployments.get(parsed.data.targetAgentId)
+  const target = db.getDeployment(parsed.data.targetAgentId)
   if (!target) {
     response.status(404).json({ error: 'Target agent not found.' })
     return
@@ -2843,12 +3225,11 @@ app.post('/api/agents/:agentId/coordinate', async (request, response) => {
     coordinationLog.unshift(coordEvent)
     if (coordinationLog.length > 50) coordinationLog.length = 50
 
-    let targetHistory = chatHistories.get(target.id)
-    if (!targetHistory) {
-      targetHistory = [{ role: 'system', content: buildAgentSystemPrompt(target) }]
-      chatHistories.set(target.id, targetHistory)
+    const targetHistory = db.getChatHistory(target.id)
+    if (targetHistory.length === 0) {
+      db.appendChatMessage(target.id, { role: 'system', content: buildAgentSystemPrompt(target) })
     }
-    targetHistory.push({
+    db.appendChatMessage(target.id, {
       role: 'system',
       content: `[CROSS-AGENT REQUEST from ${source.name}] ${parsed.data.message}`,
     })
@@ -2882,9 +3263,9 @@ app.get('/api/coordination', (_request, response) => {
 // Feature 5: Dashboard Stats Endpoint
 // ═══════════════════════════════════════════════════
 
-app.get('/api/dashboard', (_request, response) => {
+app.get('/api/dashboard', readLimiter, (_request, response) => {
   try {
-    const items = [...deployments.values()]
+    const items = db.getAllDeployments()
 
     const agentStats = items.map(d => ({
       id: d.id,
@@ -2914,6 +3295,11 @@ app.get('/api/dashboard', (_request, response) => {
       templateDistribution[d.templateId] = (templateDistribution[d.templateId] ?? 0) + 1
     }
 
+    const perAgentSpending = items.map(d => {
+      const s = db.getSpendingSummary(d.id)
+      return { agentId: d.id, agentName: d.name, totalSpent: s.totalSpent, totalFunded: s.totalFunded, txCount: s.txCount }
+    })
+
     response.json({
       summary: {
         totalAgents: items.length,
@@ -2927,8 +3313,12 @@ app.get('/api/dashboard', (_request, response) => {
       agentStats,
       roomDistribution,
       templateDistribution,
-      recentActivity: activityLog.slice(0, 20),
+      recentActivity: db.getActivity(20),
       recentCoordinations: coordinationLog.slice(0, 10),
+      spending: {
+        totalSpentAllAgents: perAgentSpending.reduce((s, a) => s + a.totalSpent, 0),
+        perAgent: perAgentSpending,
+      },
     })
   } catch (error) {
     response.status(500).json({ error: error instanceof Error ? error.message : 'Dashboard data failed.' })
@@ -2942,6 +3332,10 @@ let demoTxCounter = 1000
 function nextDemoTxId() {
   demoTxCounter += 1
   return `${demoAccountId}@${Math.floor(Date.now() / 1000)}.${String(demoTxCounter).padStart(9, '0')}`
+}
+
+function nextDemoAccountId() {
+  return `0.0.${4600000 + Math.floor(Math.random() * 100000)}`
 }
 
 function nextDemoTopicId() {
@@ -3078,9 +3472,9 @@ const demoSeedAgents = [
 
 app.post('/api/demo/seed', (_request, response) => {
   // Clear existing deployments for a fresh demo
-  deployments.clear()
-  activityLog.length = 0
-  chatHistories.clear()
+  db.clearAllDeployments()
+  db.clearActivity()
+  db.clearAllChatHistory()
   coordinationLog.length = 0
 
   const created: DeploymentRecord[] = []
@@ -3088,8 +3482,10 @@ app.post('/api/demo/seed', (_request, response) => {
   for (const seed of demoSeedAgents) {
     const topicId = nextDemoTopicId()
     const contractId = seed.vaultProtected ? nextDemoContractId() : null
+    const demoAgentAccountId = nextDemoAccountId()
     const deployment: DeploymentRecord = {
       id: `${seed.templateId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      userId: 'demo',
       templateId: seed.templateId,
       name: seed.name,
       room: seed.room,
@@ -3105,8 +3501,11 @@ app.post('/api/demo/seed', (_request, response) => {
       contractAddress: contractId ? `0x${Math.random().toString(16).slice(2, 42)}` : null,
       deploymentTxId: nextDemoTxId(),
       vaultCapHbar: seed.vaultCapHbar,
+      agentAccountId: demoAgentAccountId,
+      agentPrivateKey: '302e_demo_agent_key_' + demoAgentAccountId,
+      walletType: 'dedicated',
     }
-    deployments.set(deployment.id, deployment)
+    db.insertDeployment(deployment)
     created.push(deployment)
 
     pushActivity(
@@ -3116,7 +3515,7 @@ app.post('/api/demo/seed', (_request, response) => {
   }
 
   // Add a coordination event for flavor
-  const items = [...deployments.values()]
+  const items = db.getAllDeployments()
   const treasury = items.find(d => d.templateId === 'treasury-sentinel')
   const yieldAgent = items.find(d => d.templateId === 'yield-router')
   if (treasury && yieldAgent) {
@@ -3133,11 +3532,222 @@ app.post('/api/demo/seed', (_request, response) => {
     })
   }
 
-  saveDeployments()
-  response.status(201).json({ seeded: created.length, deployments: created })
+  response.status(201).json({ seeded: created.length, deployments: created.map(safeDeployment) })
 })
+
+// ═══════════════════════════════════════════════════
+// Feature 5: Agent Schedules CRUD
+// ═══════════════════════════════════════════════════
+
+const scheduleSchema = z.object({
+  cronExpression: z.string().min(5).max(50),
+  prompt: z.string().min(1).max(2000),
+  description: z.string().max(200).optional(),
+})
+
+const scheduleUpdateSchema = z.object({
+  cronExpression: z.string().min(5).max(50).optional(),
+  prompt: z.string().min(1).max(2000).optional(),
+  description: z.string().max(200).optional(),
+  enabled: z.boolean().optional(),
+})
+
+app.get('/api/agents/:agentId/schedules', readLimiter, (request, response) => {
+  const deployment = db.getDeployment(request.params.agentId)
+  if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
+  const schedules = db.getSchedulesByAgent(deployment.id)
+  response.json({ schedules })
+})
+
+app.post('/api/agents/:agentId/schedules', requireAuth, toolLimiter, (request, response) => {
+  const parsed = scheduleSchema.safeParse(request.body)
+  if (!parsed.success) { response.status(400).json({ error: parsed.error.flatten() }); return }
+
+  const deployment = db.getDeployment(request.params.agentId)
+  if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
+
+  if (!validateCron(parsed.data.cronExpression)) {
+    response.status(400).json({ error: 'Invalid cron expression' })
+    return
+  }
+
+  const id = `sched-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
+  const schedule: db.AgentSchedule = {
+    id,
+    deploymentId: deployment.id,
+    cronExpression: parsed.data.cronExpression,
+    prompt: parsed.data.prompt,
+    description: parsed.data.description ?? '',
+    enabled: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+  db.insertSchedule(schedule)
+
+  // Start the cron job
+  startSchedule(id, schedule.cronExpression, () =>
+    executeScheduledPrompt(id, deployment.id, schedule.prompt, 'schedule'),
+  )
+
+  pushActivity(`Schedule created for ${deployment.name}: ${schedule.description || schedule.cronExpression}`, 'system')
+  response.status(201).json({ schedule })
+})
+
+app.put('/api/agents/:agentId/schedules/:schedId', requireAuth, (request, response) => {
+  const parsed = scheduleUpdateSchema.safeParse(request.body)
+  if (!parsed.success) { response.status(400).json({ error: parsed.error.flatten() }); return }
+
+  const existing = db.getSchedule(request.params.schedId)
+  if (!existing || existing.deploymentId !== request.params.agentId) {
+    response.status(404).json({ error: 'Schedule not found' })
+    return
+  }
+
+  if (parsed.data.cronExpression && !validateCron(parsed.data.cronExpression)) {
+    response.status(400).json({ error: 'Invalid cron expression' })
+    return
+  }
+
+  db.updateSchedule(existing.id, parsed.data)
+
+  const updated = db.getSchedule(existing.id)!
+
+  // Restart or stop cron
+  if (updated.enabled) {
+    startSchedule(updated.id, updated.cronExpression, () =>
+      executeScheduledPrompt(updated.id, updated.deploymentId, updated.prompt, 'schedule'),
+    )
+  } else {
+    stopSchedule(updated.id)
+  }
+
+  response.json({ schedule: updated })
+})
+
+app.delete('/api/agents/:agentId/schedules/:schedId', requireAuth, (request, response) => {
+  const existing = db.getSchedule(request.params.schedId)
+  if (!existing || existing.deploymentId !== request.params.agentId) {
+    response.status(404).json({ error: 'Schedule not found' })
+    return
+  }
+  stopSchedule(existing.id)
+  db.deleteSchedule(existing.id)
+  response.json({ deleted: true })
+})
+
+app.get('/api/agents/:agentId/schedules/:schedId/executions', readLimiter, (request, response) => {
+  const existing = db.getSchedule(request.params.schedId)
+  if (!existing || existing.deploymentId !== request.params.agentId) {
+    response.status(404).json({ error: 'Schedule not found' })
+    return
+  }
+  const executions = db.getScheduleExecutions(existing.id)
+  response.json({ executions })
+})
+
+// ═══════════════════════════════════════════════════
+// Feature 6: Event Triggers CRUD
+// ═══════════════════════════════════════════════════
+
+const triggerSchema = z.object({
+  eventType: z.enum(['hbar_inflow', 'hcs_message', 'token_transfer']),
+  config: z.record(z.unknown()).optional(),
+  promptTemplate: z.string().min(1).max(2000),
+})
+
+const triggerUpdateSchema = z.object({
+  eventType: z.enum(['hbar_inflow', 'hcs_message', 'token_transfer']).optional(),
+  config: z.record(z.unknown()).optional(),
+  promptTemplate: z.string().min(1).max(2000).optional(),
+  enabled: z.boolean().optional(),
+})
+
+app.get('/api/agents/:agentId/triggers', readLimiter, (request, response) => {
+  const deployment = db.getDeployment(request.params.agentId)
+  if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
+  const triggers = db.getTriggersByAgent(deployment.id)
+  response.json({ triggers })
+})
+
+app.post('/api/agents/:agentId/triggers', requireAuth, toolLimiter, (request, response) => {
+  const parsed = triggerSchema.safeParse(request.body)
+  if (!parsed.success) { response.status(400).json({ error: parsed.error.flatten() }); return }
+
+  const deployment = db.getDeployment(request.params.agentId)
+  if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
+
+  const id = `trig-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
+  const trigger: db.EventTrigger = {
+    id,
+    deploymentId: deployment.id,
+    eventType: parsed.data.eventType,
+    config: (parsed.data.config ?? {}) as Record<string, unknown>,
+    promptTemplate: parsed.data.promptTemplate,
+    enabled: true,
+    lastCheckedAt: null,
+    lastTriggeredAt: null,
+    createdAt: new Date().toISOString(),
+  }
+  db.insertTrigger(trigger)
+
+  pushActivity(`Event trigger created for ${deployment.name}: ${parsed.data.eventType}`, 'system')
+  response.status(201).json({ trigger })
+})
+
+app.put('/api/agents/:agentId/triggers/:trigId', requireAuth, (request, response) => {
+  const parsed = triggerUpdateSchema.safeParse(request.body)
+  if (!parsed.success) { response.status(400).json({ error: parsed.error.flatten() }); return }
+
+  const existing = db.getTrigger(request.params.trigId)
+  if (!existing || existing.deploymentId !== request.params.agentId) {
+    response.status(404).json({ error: 'Trigger not found' })
+    return
+  }
+
+  db.updateTriggerFields(existing.id, parsed.data)
+  const updated = db.getTrigger(existing.id)!
+  response.json({ trigger: updated })
+})
+
+app.delete('/api/agents/:agentId/triggers/:trigId', requireAuth, (request, response) => {
+  const existing = db.getTrigger(request.params.trigId)
+  if (!existing || existing.deploymentId !== request.params.agentId) {
+    response.status(404).json({ error: 'Trigger not found' })
+    return
+  }
+  db.deleteTrigger(existing.id)
+  response.json({ deleted: true })
+})
+
+// ═══════════════════════════════════════════════════
+// Bootstrap schedules & event poller at startup
+// ═══════════════════════════════════════════════════
+
+function bootstrapSchedules(): void {
+  const schedules = db.getAllEnabledSchedules()
+  for (const s of schedules) {
+    startSchedule(s.id, s.cronExpression, () =>
+      executeScheduledPrompt(s.id, s.deploymentId, s.prompt, 'schedule'),
+    )
+  }
+  if (schedules.length > 0) {
+    console.log(`[Aivy] Bootstrapped ${schedules.length} schedule(s).`)
+  }
+}
+
+function bootstrapEventPoller(): void {
+  // Always start poller so new triggers are picked up dynamically
+  startPoller(
+    config.mirrorNodeUrl,
+    (triggerId, deploymentId, filledPrompt) =>
+      executeScheduledPrompt(triggerId, deploymentId, filledPrompt, 'trigger').then(() => {}),
+    30_000,
+  )
+}
 
 app.listen(config.port, () => {
   const mode = isConfigured ? 'live testnet mode' : demoMode ? 'demo mode (no Hedera keys)' : 'config required mode'
   console.log(`[Aivy] server listening on http://localhost:${config.port} (${mode})`)
+  bootstrapSchedules()
+  bootstrapEventPoller()
 })

@@ -12,6 +12,7 @@ type TopBarProps = {
   onToggleTheme: () => void
   activeView: 'office' | 'dashboard'
   onChangeView: (view: 'office' | 'dashboard') => void
+  onGoHome: () => void
   demoMode?: boolean
 }
 
@@ -25,16 +26,17 @@ export default function TopBar({
   onToggleTheme,
   activeView,
   onChangeView,
+  onGoHome,
   demoMode,
 }: TopBarProps) {
   const isConnected = wallet.status === 'connected'
 
   return (
     <header className="topbar-v2">
-      <div className="topbar-left">
-        <div className="topbar-brand">A</div>
+      <button className="topbar-home" onClick={onGoHome} type="button" title="Back to home">
+        <img className="topbar-brand-logo" src="/logo-192.png" alt="Aivy" />
         <span className="topbar-name">Aivy</span>
-      </div>
+      </button>
 
       <div className="topbar-center">
         <div className="view-toggle">

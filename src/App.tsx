@@ -82,6 +82,7 @@ function App() {
     vaultCapHbar: number
     launchNote: string
     capabilityGroups: CapabilityGroupId[]
+    walletType: 'platform' | 'dedicated'
   }) => {
     setIsDeploying(true)
     try {
@@ -293,6 +294,7 @@ function App() {
         onToggleTheme={toggleTheme}
         activeView={view === 'dashboard' ? 'dashboard' : 'office'}
         onChangeView={(v) => setView(v)}
+        onGoHome={() => setView('landing')}
         demoMode={live.demoMode}
       />
 
@@ -342,6 +344,8 @@ function App() {
           chatEnabled={live.chatEnabled}
           events={live.events}
           allAgents={live.agents}
+          wallet={wallet}
+          onConnectWallet={connectWallet}
           onClose={() => setSelectedAgentId('')}
           onRunAgent={runSelectedAgent}
           onToggleAgent={toggleSelectedAgent}

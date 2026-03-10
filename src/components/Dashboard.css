@@ -319,3 +319,35 @@
     font-size: 11px;
   }
 }
+
+/* ─── Spending Section ────────────────────────── */
+.dash-spending-total {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.dash-spending-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #f87171;
+  font-family: var(--font-mono, 'VT323', monospace);
+}
+
+.dash-spending-label {
+  font-size: 0.75rem;
+  opacity: 0.5;
+}
+
+.dash-bar-funded {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  opacity: 0.35;
+}
+
+.dash-bar-track {
+  position: relative;
+}

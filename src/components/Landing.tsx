@@ -38,7 +38,7 @@ export default function Landing({ onEnter, onTryDemo }: LandingProps) {
     <div className="landing">
       <div className="landing-content">
         <header className="landing-header" style={{ animationDelay: '0s' }}>
-          <div className="landing-brand">A</div>
+          <img className="landing-brand-logo" src="/logo-192.png" alt="Aivy" />
           <h1 className="landing-title">Aivy</h1>
           <p className="landing-tagline">
             Deploy AI Agents on Hedera in 60 Seconds

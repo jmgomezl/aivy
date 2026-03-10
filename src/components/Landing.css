@@ -32,19 +32,12 @@
   gap: 0.5rem;
 }
 
-.landing-brand {
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: 'VT323', monospace;
-  font-size: 36px;
-  font-weight: 700;
-  color: #08111d;
-  background: linear-gradient(135deg, #5ad6b5, #f3c35f);
+.landing-brand-logo {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
   margin-bottom: 0.5rem;
+  filter: drop-shadow(0 0 12px rgba(90, 214, 181, 0.4));
 }
 
 .landing-title {

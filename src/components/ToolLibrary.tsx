@@ -50,6 +50,7 @@ export default function ToolLibrary({
 
   const availableTools = useMemo(
     () => toolEntries.filter((e) => enabledGroups.has(e.groupId)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- enabledGroups is derived from agent.capabilityGroups
     [toolEntries, agent.capabilityGroups],
   )
 
@@ -101,6 +102,7 @@ export default function ToolLibrary({
       setActiveGroupId(availableTools[0].groupId)
       primeToolState(availableTools[0])
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
   }, [])
 
   const updateField = (id: string, value: unknown) => {

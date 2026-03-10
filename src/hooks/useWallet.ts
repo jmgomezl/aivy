@@ -5,8 +5,35 @@ import {
   disconnectHederaWallet,
   isWalletConnectConfigured,
 } from '../lib/hederaWallet'
+import { setToken, clearToken } from '../lib/auth'
 
 export { isWalletConnectConfigured }
+
+async function authenticateWithServer(accountId: string): Promise<void> {
+  try {
+    // Step 1: Request challenge
+    const challengeResp = await fetch('/api/auth/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountId }),
+    })
+    if (!challengeResp.ok) return
+
+    // Step 2: Verify with server (simplified - server verifies account exists on Hedera)
+    const verifyResp = await fetch('/api/auth/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountId }),
+    })
+    if (!verifyResp.ok) return
+
+    const { token } = (await verifyResp.json()) as { token: string }
+    setToken(token)
+  } catch {
+    // Auth failure is non-critical - app still works without it
+    console.warn('[Aivy] Server authentication failed, continuing without auth.')
+  }
+}
 
 export function useWallet() {
   const [wallet, setWallet] = useState<WalletState>({ status: 'idle' })
@@ -24,6 +51,9 @@ export function useWallet() {
     try {
       const session = await connectHederaWallet()
       setWallet({ status: 'connected', ...session })
+
+      // Authenticate with backend after wallet connects
+      void authenticateWithServer(session.accountId)
     } catch (error) {
       setWallet({
         status: 'error',
@@ -39,6 +69,7 @@ export function useWallet() {
 
     try {
       await disconnectHederaWallet()
+      clearToken()
       setWallet({ status: 'idle' })
     } catch (error) {
       setWallet({

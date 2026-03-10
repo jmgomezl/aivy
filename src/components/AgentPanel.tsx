@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react'
-import type { LiveAgent, ToolCatalogResponse, ToolCatalogEntry, ToolWorkflow, ToolCatalogGroup, ActivityEvent } from '../types'
+import { useEffect, useMemo, useState } from 'react'
+import type { LiveAgent, ToolCatalogResponse, ToolCatalogEntry, ToolWorkflow, ToolCatalogGroup, ActivityEvent, AgentSpendingResponse, WalletState } from '../types'
 import { statusMeta, toneClass } from '../data'
 import { requestJson } from '../utils'
 import ChatPanel from './ChatPanel'
+import ScheduleManager from './ScheduleManager'
+import TriggerManager from './TriggerManager'
 import './AgentPanel.css'
 
 type AgentPanelProps = {
@@ -22,6 +24,8 @@ type AgentPanelProps = {
   onAgentReply?: (agentId: string, message: string) => void
   onRefresh?: () => void
   onMarkActive?: (agentId: string) => void
+  wallet?: WalletState
+  onConnectWallet?: () => void
 }
 
 export default function AgentPanel({
@@ -41,13 +45,43 @@ export default function AgentPanel({
   onAgentReply,
   onRefresh,
   onMarkActive,
+  wallet,
+  onConnectWallet,
 }: AgentPanelProps) {
-  const [activeTab, setActiveTab] = useState<'info' | 'chat' | 'history'>(chatEnabled ? 'chat' : 'info')
+  const [activeTab, setActiveTab] = useState<'info' | 'chat' | 'history' | 'spending' | 'automation'>(chatEnabled ? 'chat' : 'info')
   const [isExporting, setIsExporting] = useState(false)
   const [coordTarget, setCoordTarget] = useState('')
   const [coordMsg, setCoordMsg] = useState('')
   const [coordSending, setCoordSending] = useState(false)
   const [coordResult, setCoordResult] = useState<string | null>(null)
+  const [walletBalance, setWalletBalance] = useState<number | null>(null)
+  const [walletLoading, setWalletLoading] = useState(false)
+  const [fundAmount, setFundAmount] = useState('')
+  const [fundingInProgress, setFundingInProgress] = useState(false)
+  const [fundResult, setFundResult] = useState<string | null>(null)
+  const [spendingData, setSpendingData] = useState<AgentSpendingResponse | null>(null)
+  const [spendingLoading, setSpendingLoading] = useState(false)
+
+  useEffect(() => {
+    if (activeTab === 'spending') {
+      setSpendingLoading(true)
+      requestJson<AgentSpendingResponse>(`/api/agents/${agent.id}/spending`)
+        .then(setSpendingData)
+        .catch(() => setSpendingData(null))
+        .finally(() => setSpendingLoading(false))
+    }
+  }, [agent.id, activeTab])
+
+  useEffect(() => {
+    if (activeTab !== 'info') return
+    setWalletLoading(true)
+    requestJson<{ walletType: string; agentAccountId: string | null; balance: number | null }>(
+      `/api/agents/${agent.id}/wallet`,
+    )
+      .then((res) => setWalletBalance(res.balance))
+      .catch(() => setWalletBalance(null))
+      .finally(() => setWalletLoading(false))
+  }, [agent.id, activeTab])
 
   const otherAgents = useMemo(
     () => allAgents.filter(a => a.id !== agent.id && a.status !== 'paused'),
@@ -101,6 +135,33 @@ export default function AgentPanel({
       // Silent fail for hackathon
     } finally {
       setIsExporting(false)
+    }
+  }
+
+  const handleFundAgent = async () => {
+    const amount = parseFloat(fundAmount)
+    if (!amount || amount <= 0 || !agent.agentAccountId) return
+    setFundingInProgress(true)
+    setFundResult(null)
+    try {
+      const { fundAgentAccount } = await import('../lib/hederaWallet')
+      const { transactionId } = await fundAgentAccount(agent.agentAccountId, amount)
+      await requestJson(`/api/agents/${agent.id}/fund`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amountHbar: amount,
+          txId: transactionId,
+          funderAccountId: wallet?.status === 'connected' ? wallet.accountId : 'unknown',
+        }),
+      })
+      setFundResult(`Funded ${amount} HBAR!`)
+      setFundAmount('')
+      onRefresh?.()
+    } catch (err) {
+      setFundResult(err instanceof Error ? err.message : 'Funding failed')
+    } finally {
+      setFundingInProgress(false)
     }
   }
 
@@ -186,6 +247,28 @@ export default function AgentPanel({
               <span className="ap-tab-badge">{agentEvents.length}</span>
             )}
           </button>
+          <button
+            className={`ap-tab ${activeTab === 'spending' ? 'is-active' : ''}`}
+            onClick={() => setActiveTab('spending')}
+            type="button"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="12" y1="1" x2="12" y2="23" />
+              <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+            </svg>
+            Spending
+          </button>
+          <button
+            className={`ap-tab ${activeTab === 'automation' ? 'is-active' : ''}`}
+            onClick={() => setActiveTab('automation')}
+            type="button"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+            </svg>
+            Auto
+          </button>
         </div>
 
         {/* ─── Chat Tab ──────────────────────── */}
@@ -223,6 +306,69 @@ export default function AgentPanel({
                 <span>Cap</span>
                 <strong>{agent.vaultCapHbar} HBAR</strong>
               </div>
+            </div>
+
+            {/* ─── Wallet ──────────────────────────── */}
+            <div className="ap-wallet-section">
+              <div className="ap-wallet-header">
+                <span className="ap-section-label">
+                  {agent.walletType === 'dedicated' ? 'Dedicated Wallet' : 'Shared Wallet'}
+                </span>
+                {agent.walletType === 'dedicated' && (
+                  <span className="ap-wallet-badge">Own Account</span>
+                )}
+              </div>
+              {agent.agentAccountId && (
+                <div className="ap-wallet-account">
+                  <a
+                    href={`https://hashscan.io/testnet/account/${agent.agentAccountId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ap-wallet-id"
+                  >
+                    {agent.agentAccountId}
+                  </a>
+                  <span className="ap-wallet-balance">
+                    {walletLoading ? '...' : walletBalance !== null ? `${walletBalance} HBAR` : '--'}
+                  </span>
+                </div>
+              )}
+              {agent.walletType === 'dedicated' && agent.agentAccountId && (
+                <div className="ap-fund-form">
+                  {wallet?.status === 'connected' ? (
+                    <>
+                      <div className="ap-fund-row">
+                        <input
+                          type="number"
+                          className="ap-fund-input"
+                          placeholder="HBAR"
+                          value={fundAmount}
+                          onChange={(e) => setFundAmount(e.target.value)}
+                          min="0.01"
+                          step="0.1"
+                        />
+                        <button
+                          className="ap-fund-btn"
+                          onClick={() => void handleFundAgent()}
+                          disabled={fundingInProgress || !fundAmount}
+                          type="button"
+                        >
+                          {fundingInProgress ? 'Sending...' : `Fund ${fundAmount || '0'} ℏ`}
+                        </button>
+                      </div>
+                      {fundResult && <span className={`ap-fund-result ${fundResult.includes('Funded') ? 'success' : 'error'}`}>{fundResult}</span>}
+                    </>
+                  ) : (
+                    <button
+                      className="ap-fund-btn"
+                      onClick={() => onConnectWallet?.()}
+                      type="button"
+                    >
+                      Connect wallet to fund
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* ─── Export Audit ────────────────────── */}
@@ -385,6 +531,68 @@ export default function AgentPanel({
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ─── Spending Tab ────────────────────── */}
+        {activeTab === 'spending' && (
+          <div className="ap-spending">
+            {spendingLoading ? (
+              <p className="ap-history-empty">Loading spending data...</p>
+            ) : !spendingData || spendingData.summary.txCount === 0 ? (
+              <p className="ap-history-empty">No spending recorded yet. Execute HBAR transfers via chat or tools to track spending.</p>
+            ) : (
+              <>
+                <div className="ap-spending-summary">
+                  <div className="ap-spending-card outflow">
+                    <span className="ap-spending-label">Total Spent</span>
+                    <strong>{spendingData.summary.totalSpent.toFixed(2)} HBAR</strong>
+                  </div>
+                  <div className="ap-spending-card inflow">
+                    <span className="ap-spending-label">Total Funded</span>
+                    <strong>{spendingData.summary.totalFunded.toFixed(2)} HBAR</strong>
+                  </div>
+                  <div className="ap-spending-card">
+                    <span className="ap-spending-label">Burn Rate</span>
+                    <strong>{spendingData.burnRatePerDay} HBAR/day</strong>
+                  </div>
+                  {spendingData.burnRatePerDay > 0 && (
+                    <div className="ap-spending-card">
+                      <span className="ap-spending-label">Est. Runway</span>
+                      <strong>
+                        {Math.max(0, Math.round((spendingData.summary.totalFunded - spendingData.summary.totalSpent) / spendingData.burnRatePerDay))} days
+                      </strong>
+                    </div>
+                  )}
+                </div>
+                <div className="ap-spending-list">
+                  {spendingData.records.map((r) => (
+                    <div className={`ap-spending-row ${r.direction}`} key={r.id}>
+                      <span className="ap-spending-dir">{r.direction === 'inflow' ? '+' : '−'}</span>
+                      <span className="ap-spending-amount">{r.amountHbar.toFixed(2)} HBAR</span>
+                      <span className="ap-spending-meta">
+                        {r.toolName ?? r.source}
+                        {r.txId && <span className="ap-spending-tx"> · {r.txId.slice(0, 20)}…</span>}
+                      </span>
+                      <span className="ap-spending-time">{new Date(r.createdAt).toLocaleDateString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ─── Automation Tab ─────────────────── */}
+        {activeTab === 'automation' && (
+          <div className="ap-automation">
+            <ScheduleManager agentId={agent.id} />
+            <div className="ap-automation-divider" />
+            <TriggerManager
+              agentId={agent.id}
+              agentAccountId={agent.agentAccountId ?? null}
+              agentTopicId={agent.topicId ?? null}
+            />
           </div>
         )}
       </aside>

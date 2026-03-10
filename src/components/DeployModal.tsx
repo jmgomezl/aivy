@@ -19,6 +19,7 @@ type DeployModalProps = {
     vaultCapHbar: number
     launchNote: string
     capabilityGroups: CapabilityGroupId[]
+    walletType: 'platform' | 'dedicated'
   }) => void
   onClose: () => void
 }
@@ -39,6 +40,7 @@ export default function DeployModal({
     (wizard?.defaults.agentLabel as string) ?? template.name,
   )
   const [vaultRequired, setVaultRequired] = useState(template.id !== 'governance-relay')
+  const [walletType, setWalletType] = useState<'platform' | 'dedicated'>('dedicated')
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [wizardValues, setWizardValues] = useState<Record<string, unknown>>(
     wizard ? deepClone(wizard.defaults) : {},
@@ -68,6 +70,7 @@ export default function DeployModal({
       vaultCapHbar: launchPreview.vaultCapHbar,
       launchNote: launchPreview.launchNote,
       capabilityGroups,
+      walletType,
     })
   }
 
@@ -118,6 +121,23 @@ export default function DeployModal({
             {isDuplicateName && (
               <span className="dm-error-hint">An agent with this name already exists</span>
             )}
+          </label>
+
+          <label className="dm-field dm-toggle-field">
+            <div>
+              <span>
+                Dedicated Wallet
+                <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">Creates a unique Hedera account for this agent with its own balance and key pair. The agent operates autonomously with its own on-chain identity instead of sharing the platform operator wallet.</span></span>
+              </span>
+              <small>Own Hedera account with separate balance <strong style={{ color: '#5ad6b5' }}>(Recommended)</strong></small>
+            </div>
+            <button
+              className={walletType === 'dedicated' ? 'dm-toggle is-on' : 'dm-toggle'}
+              onClick={() => setWalletType((v) => v === 'dedicated' ? 'platform' : 'dedicated')}
+              type="button"
+            >
+              {walletType === 'dedicated' ? 'ON' : 'OFF'}
+            </button>
           </label>
 
           <label className="dm-field dm-toggle-field">

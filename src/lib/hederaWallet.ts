@@ -232,6 +232,34 @@ export const connectHederaWallet = async (): Promise<WalletSessionInfo> => {
   }
 }
 
+export const fundAgentAccount = async (
+  agentAccountId: string,
+  amountHbar: number,
+): Promise<{ transactionId: string }> => {
+  if (!activeState) {
+    throw new Error('Wallet not connected. Connect HashPack first.')
+  }
+
+  const { hashconnect, sdk } = activeState
+  const connectedId = hashconnect.connectedAccountIds[0]
+  if (!connectedId) {
+    throw new Error('No connected account found. Reconnect your wallet.')
+  }
+
+  const signer = hashconnect.getSigner(connectedId)
+
+  const tx = await new sdk.TransferTransaction()
+    .addHbarTransfer(signer.getAccountId(), new sdk.Hbar(-amountHbar))
+    .addHbarTransfer(sdk.AccountId.fromString(agentAccountId), new sdk.Hbar(amountHbar))
+    .freezeWithSigner(signer)
+
+  const signedTx = await tx.executeWithSigner(signer)
+
+  return {
+    transactionId: signedTx.transactionId?.toString() ?? 'unknown',
+  }
+}
+
 export const disconnectHederaWallet = async () => {
   if (!activeState) {
     return

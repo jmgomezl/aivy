@@ -25,6 +25,14 @@ type CoordinationEvent = {
   status: string
 }
 
+type AgentSpending = {
+  agentId: string
+  agentName: string
+  totalSpent: number
+  totalFunded: number
+  txCount: number
+}
+
 type DashboardData = {
   summary: {
     totalAgents: number
@@ -40,6 +48,10 @@ type DashboardData = {
   templateDistribution: Record<string, number>
   recentActivity: Array<{ id: string; label: string; tone: string; timestamp: string }>
   recentCoordinations: CoordinationEvent[]
+  spending?: {
+    totalSpentAllAgents: number
+    perAgent: AgentSpending[]
+  }
 }
 
 export default function Dashboard() {
@@ -192,6 +204,43 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
+
+        {/* ─── HBAR Spending ──────────────────────── */}
+        {data.spending && data.spending.perAgent.some(a => a.txCount > 0) && (
+          <div className="dash-section">
+            <h3 className="dash-section-title">HBAR Spending</h3>
+            <div className="dash-spending-total">
+              <span className="dash-spending-value">{data.spending.totalSpentAllAgents.toFixed(2)}</span>
+              <span className="dash-spending-label">Total HBAR spent across all agents</span>
+            </div>
+            <div className="dash-bars">
+              {data.spending.perAgent.filter(a => a.txCount > 0).map(agent => {
+                const maxSpent = Math.max(...data.spending!.perAgent.map(a => a.totalSpent), 1)
+                const pct = (agent.totalSpent / maxSpent) * 100
+                return (
+                  <div className="dash-bar-row" key={agent.agentId}>
+                    <div className="dash-bar-label">
+                      <span>{agent.agentName}</span>
+                    </div>
+                    <div className="dash-bar-track">
+                      <div
+                        className="dash-bar-fill"
+                        style={{ width: `${Math.max(pct, 2)}%`, background: '#f87171' }}
+                      />
+                      {agent.totalFunded > 0 && (
+                        <div
+                          className="dash-bar-fill dash-bar-funded"
+                          style={{ width: `${Math.max((agent.totalFunded / maxSpent) * 100, 2)}%`, background: '#4ade80' }}
+                        />
+                      )}
+                    </div>
+                    <span className="dash-bar-count">{agent.totalSpent.toFixed(1)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* ─── Agent-to-Agent Coordination ────────── */}
         <div className="dash-section">
