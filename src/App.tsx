@@ -27,6 +27,7 @@ import ResultDrawer from './components/ResultDrawer'
 import OnboardingTour from './components/OnboardingTour'
 import DemoCoach from './components/DemoCoach'
 import Dashboard from './components/Dashboard'
+import { ToastProvider } from './components/Toast'
 
 function App() {
   // ─── View State ───────────────────────────────
@@ -283,6 +284,7 @@ function App() {
 
   // ─── Office View ──────────────────────────────
   return (
+    <ToastProvider>
     <div className="app-v2">
       <TopBar
         networkLabel={live.networkLabel}
@@ -408,6 +410,7 @@ function App() {
         />
       )}
     </div>
+    </ToastProvider>
   )
 }
 

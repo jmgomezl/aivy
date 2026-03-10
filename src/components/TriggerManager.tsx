@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { requestJson } from '../utils'
+import { useToast } from '../hooks/useToast'
 import type { EventTrigger } from '../types'
 import './TriggerManager.css'
 
@@ -16,8 +17,10 @@ type Props = {
 }
 
 export default function TriggerManager({ agentId, agentAccountId, agentTopicId }: Props) {
+  const { addToast } = useToast()
   const [triggers, setTriggers] = useState<EventTrigger[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [eventType, setEventType] = useState<EventTrigger['eventType']>('hbar_inflow')
   const [configAccountId, setConfigAccountId] = useState(agentAccountId ?? '')
@@ -33,7 +36,10 @@ export default function TriggerManager({ agentId, agentAccountId, agentTopicId }
         `/api/agents/${agentId}/triggers`,
       )
       setTriggers(data.triggers)
-    } catch { /* silent */ }
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load triggers')
+    }
     setLoading(false)
   }, [agentId])
 
@@ -41,6 +47,7 @@ export default function TriggerManager({ agentId, agentAccountId, agentTopicId }
 
   const handleCreate = async () => {
     setSaving(true)
+    setError(null)
     const config: Record<string, unknown> = {}
     if (eventType === 'hbar_inflow') {
       config.accountId = configAccountId || agentAccountId
@@ -60,12 +67,18 @@ export default function TriggerManager({ agentId, agentAccountId, agentTopicId }
       })
       setPromptTemplate('')
       setShowForm(false)
+      addToast('Trigger created', 'success')
       await refresh()
-    } catch { /* silent */ }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create trigger'
+      setError(msg)
+      addToast(msg, 'error')
+    }
     setSaving(false)
   }
 
   const handleToggle = async (trigger: EventTrigger) => {
+    setError(null)
     try {
       await requestJson(`/api/agents/${agentId}/triggers/${trigger.id}`, {
         method: 'PUT',
@@ -73,16 +86,26 @@ export default function TriggerManager({ agentId, agentAccountId, agentTopicId }
         body: JSON.stringify({ enabled: !trigger.enabled }),
       })
       await refresh()
-    } catch { /* silent */ }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to toggle trigger'
+      setError(msg)
+      addToast(msg, 'error')
+    }
   }
 
   const handleDelete = async (triggerId: string) => {
+    setError(null)
     try {
       await requestJson(`/api/agents/${agentId}/triggers/${triggerId}`, {
         method: 'DELETE',
       })
+      addToast('Trigger deleted', 'success')
       await refresh()
-    } catch { /* silent */ }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete trigger'
+      setError(msg)
+      addToast(msg, 'error')
+    }
   }
 
   const currentEventType = EVENT_TYPES.find((e) => e.value === eventType)
@@ -101,6 +124,8 @@ export default function TriggerManager({ agentId, agentAccountId, agentTopicId }
           {showForm ? 'Cancel' : '+ Add'}
         </button>
       </div>
+
+      {error && <p className="tm-error">{error}</p>}
 
       {showForm && (
         <div className="tm-form">

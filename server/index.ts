@@ -2499,161 +2499,19 @@ app.post('/api/agents/:agentId/chat', requireAuth, chatLimiter, async (request, 
     if (history.length === 0) {
       history = [{ role: 'system', content: buildAgentSystemPrompt(deployment, userAccountId) }]
     } else {
-      // Always update system prompt to reflect latest deployment state + user wallet
       history[0] = { role: 'system', content: buildAgentSystemPrompt(deployment, userAccountId) }
     }
-
-    // Get available tools for this agent (filtered by capability groups)
-    const catalog = buildToolCatalog()
-    const enabledGroups = new Set(deployment.capabilityGroups)
-    const agentTools = catalog.tools.filter((t) => enabledGroups.has(t.groupId))
-    const openaiTools = buildOpenAITools(agentTools, userAccountId)
-    const agentToolNames = new Set(agentTools.map((t) => t.name))
 
     // Add user message
     history.push({ role: 'user', content: parsed.data.message })
 
-    // Call OpenAI with tool-calling loop
-    const collectedToolCalls: Array<{
-      toolName: string
-      params: Record<string, unknown>
-      result: { raw?: Record<string, unknown>; humanMessage?: string }
-    }> = []
-    const collectedReferences: ResultReference[] = []
-
-    let iterations = 0
-    const maxIterations = 5
-
-    while (iterations < maxIterations) {
-      iterations++
-
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: history as OpenAI.ChatCompletionMessageParam[],
-        tools: openaiTools.length > 0 ? openaiTools : undefined,
-        temperature: 0.3,
-        max_tokens: 1024,
-      })
-
-      const choice = completion.choices[0]
-      if (!choice) break
-
-      const assistantMessage = choice.message
-
-      // Store assistant message in history
-      const fnToolCalls = (assistantMessage.tool_calls ?? []).filter((tc): tc is Extract<typeof tc, { type: 'function' }> => tc.type === 'function')
-      history.push({
-        role: 'assistant',
-        content: assistantMessage.content,
-        tool_calls: fnToolCalls.length > 0
-          ? fnToolCalls.map((tc) => ({
-              id: tc.id,
-              type: 'function' as const,
-              function: { name: tc.function.name, arguments: tc.function.arguments },
-            }))
-          : undefined,
-      })
-
-      // If no tool calls, we're done
-      if (fnToolCalls.length === 0) {
-        break
-      }
-
-      // Execute each tool call
-      for (const toolCall of fnToolCalls) {
-        const fnName = toolCall.function.name
-        let fnArgs: Record<string, unknown> = {}
-
-        try {
-          fnArgs = JSON.parse(toolCall.function.arguments) as Record<string, unknown>
-        } catch {
-          // If JSON parsing fails, pass empty params
-        }
-
-        let toolResultContent: string
-
-        console.log(`[Chat] ${deployment.name} calling tool: ${fnName}`, JSON.stringify(fnArgs))
-
-        if (!agentToolNames.has(fnName)) {
-          toolResultContent = JSON.stringify({ error: `Tool ${fnName} is not available for this agent.` })
-        } else {
-          try {
-            const result = demoMode
-              ? getDemoToolResponse(fnName, fnArgs)
-              : await executeTool(fnName, fnArgs, agentClient)
-            console.log(`[Chat] ${deployment.name} tool result:`, JSON.stringify({ humanMessage: result.humanMessage, raw: result.raw }))
-            const references = extractResultReferences(result.raw)
-            collectedToolCalls.push({ toolName: fnName, params: fnArgs, result })
-            collectedReferences.push(...references)
-
-            // Record HBAR spending
-            const spendingAmount = detectSpendingAmount(fnName, fnArgs)
-            if (spendingAmount > 0) {
-              const txId = typeof result.raw?.transactionId === 'string' ? result.raw.transactionId : null
-              db.recordSpending(deployment.id, spendingAmount, 'outflow', fnName, txId, 'chat', result.humanMessage ?? null)
-            }
-
-            // Feature 4: Agent-to-agent coordination checks
-            if (result.raw) {
-              runCoordinationChecks(deployment, { ...result.raw, humanMessage: result.humanMessage })
-            }
-
-            // Update deployment stats for mutations
-            const groupId = toolNameToGroup.get(fnName)
-            const isQuery = groupId ? queryGroupIds.has(groupId) : true
-            if (!isQuery) {
-              deployment.executions += 1
-              deployment.status = deployment.vaultProtected ? 'guarded' : 'active'
-              deployment.lastAction = titleCase(fnName)
-              db.updateDeployment(deployment)
-            }
-
-            pushActivity(
-              `${deployment.name} (chat): ${result.humanMessage ?? titleCase(fnName)}`,
-              isQuery ? 'system' : deployment.vaultProtected ? 'vault' : 'success',
-            )
-
-            toolResultContent = JSON.stringify({
-              humanMessage: result.humanMessage,
-              raw: result.raw,
-            })
-          } catch (err) {
-            toolResultContent = JSON.stringify({
-              error: err instanceof Error ? err.message : 'Tool execution failed.',
-            })
-          }
-        }
-
-        history.push({
-          role: 'tool',
-          content: toolResultContent,
-          tool_call_id: toolCall.id,
-          name: fnName,
-        })
-      }
-    }
-
-    // Trim history to prevent unbounded growth (keep system + last 40 messages)
-    if (history.length > 42) {
-      const system = history[0]
-      history = [system, ...history.slice(-40)]
-    }
-    db.replaceChatHistory(deployment.id, history)
-
-    // Extract final assistant reply
-    const lastAssistant = [...history].reverse().find((m) => m.role === 'assistant' && m.content)
-    const reply = lastAssistant?.content ?? 'I completed the requested actions.'
-
-    // Deduplicate references
-    const uniqueRefs = collectedReferences.filter(
-      (ref, idx, all) =>
-        idx === all.findIndex((r) => r.label === ref.label && r.value === ref.value),
-    )
+    // Run the shared chat loop
+    const result = await runChatLoop(deployment, history, agentClient, 'chat')
 
     response.json({
-      reply,
-      toolCalls: collectedToolCalls,
-      references: uniqueRefs,
+      reply: result.reply,
+      toolCalls: result.toolCalls,
+      references: result.references,
     })
   } catch (error) {
     response.status(500).json({
@@ -3643,6 +3501,22 @@ app.get('/api/agents/:agentId/schedules/:schedId/executions', readLimiter, (requ
   }
   const executions = db.getScheduleExecutions(existing.id)
   response.json({ executions })
+})
+
+app.post('/api/agents/:agentId/schedules/:schedId/run', requireAuth, toolLimiter, async (request, response) => {
+  const existing = db.getSchedule(request.params.schedId)
+  if (!existing || existing.deploymentId !== request.params.agentId) {
+    response.status(404).json({ error: 'Schedule not found' })
+    return
+  }
+
+  try {
+    const result = await executeScheduledPrompt(existing.id, existing.deploymentId, existing.prompt, 'schedule')
+    response.json({ status: 'completed', result })
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : 'Execution failed'
+    response.json({ status: 'failed', error: errMsg })
+  }
 })
 
 // ═══════════════════════════════════════════════════

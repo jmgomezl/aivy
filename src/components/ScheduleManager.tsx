@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { requestJson } from '../utils'
+import { useToast } from '../hooks/useToast'
 import type { AgentSchedule, ScheduleExecution } from '../types'
 import './ScheduleManager.css'
 
@@ -15,13 +16,16 @@ type Props = {
 }
 
 export default function ScheduleManager({ agentId }: Props) {
+  const { addToast } = useToast()
   const [schedules, setSchedules] = useState<AgentSchedule[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [cron, setCron] = useState('0 * * * *')
   const [prompt, setPrompt] = useState('')
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
+  const [runningId, setRunningId] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [executions, setExecutions] = useState<Record<string, ScheduleExecution[]>>({})
 
@@ -31,7 +35,10 @@ export default function ScheduleManager({ agentId }: Props) {
         `/api/agents/${agentId}/schedules`,
       )
       setSchedules(data.schedules)
-    } catch { /* silent */ }
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load schedules')
+    }
     setLoading(false)
   }, [agentId])
 
@@ -39,6 +46,7 @@ export default function ScheduleManager({ agentId }: Props) {
 
   const handleCreate = async () => {
     setSaving(true)
+    setError(null)
     try {
       await requestJson(`/api/agents/${agentId}/schedules`, {
         method: 'POST',
@@ -49,12 +57,18 @@ export default function ScheduleManager({ agentId }: Props) {
       setPrompt('')
       setDescription('')
       setShowForm(false)
+      addToast('Schedule created', 'success')
       await refresh()
-    } catch { /* silent */ }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create schedule'
+      setError(msg)
+      addToast(msg, 'error')
+    }
     setSaving(false)
   }
 
   const handleToggle = async (schedule: AgentSchedule) => {
+    setError(null)
     try {
       await requestJson(`/api/agents/${agentId}/schedules/${schedule.id}`, {
         method: 'PUT',
@@ -62,16 +76,56 @@ export default function ScheduleManager({ agentId }: Props) {
         body: JSON.stringify({ enabled: !schedule.enabled }),
       })
       await refresh()
-    } catch { /* silent */ }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to toggle schedule'
+      setError(msg)
+      addToast(msg, 'error')
+    }
   }
 
   const handleDelete = async (scheduleId: string) => {
+    setError(null)
     try {
       await requestJson(`/api/agents/${agentId}/schedules/${scheduleId}`, {
         method: 'DELETE',
       })
+      addToast('Schedule deleted', 'success')
       await refresh()
-    } catch { /* silent */ }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete schedule'
+      setError(msg)
+      addToast(msg, 'error')
+    }
+  }
+
+  const handleRunNow = async (schedule: AgentSchedule) => {
+    setRunningId(schedule.id)
+    setError(null)
+    try {
+      const data = await requestJson<{ status: string; result?: string; error?: string }>(
+        `/api/agents/${agentId}/schedules/${schedule.id}/run`,
+        { method: 'POST' },
+      )
+      if (data.status === 'completed') {
+        addToast('Schedule executed successfully', 'success')
+      } else {
+        addToast(data.error ?? 'Execution failed', 'error')
+      }
+      await refresh()
+      // Auto-expand execution history
+      try {
+        const execData = await requestJson<{ executions: ScheduleExecution[] }>(
+          `/api/agents/${agentId}/schedules/${schedule.id}/executions`,
+        )
+        setExecutions((prev) => ({ ...prev, [schedule.id]: execData.executions }))
+        setExpandedId(schedule.id)
+      } catch { /* non-critical */ }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to run schedule'
+      setError(msg)
+      addToast(msg, 'error')
+    }
+    setRunningId(null)
   }
 
   const loadExecutions = async (scheduleId: string) => {
@@ -85,7 +139,9 @@ export default function ScheduleManager({ agentId }: Props) {
       )
       setExecutions((prev) => ({ ...prev, [scheduleId]: data.executions }))
       setExpandedId(scheduleId)
-    } catch { /* silent */ }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load executions')
+    }
   }
 
   if (loading) return <p className="sm-empty">Loading schedules...</p>
@@ -98,6 +154,8 @@ export default function ScheduleManager({ agentId }: Props) {
           {showForm ? 'Cancel' : '+ Add'}
         </button>
       </div>
+
+      {error && <p className="sm-error">{error}</p>}
 
       {showForm && (
         <div className="sm-form">
@@ -154,6 +212,22 @@ export default function ScheduleManager({ agentId }: Props) {
                 {s.description && <span className="sm-desc">{s.description}</span>}
               </div>
               <div className="sm-item-actions">
+                <button
+                  className="sm-run-btn"
+                  onClick={() => handleRunNow(s)}
+                  disabled={runningId === s.id}
+                  title="Run now"
+                >
+                  {runningId === s.id ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="sm-spin">
+                      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                    </svg>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="6,3 20,12 6,21" />
+                    </svg>
+                  )}
+                </button>
                 <button
                   className={`sm-toggle ${s.enabled ? 'on' : 'off'}`}
                   onClick={() => handleToggle(s)}

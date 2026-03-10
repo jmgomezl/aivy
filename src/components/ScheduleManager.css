@@ -110,6 +110,12 @@
   cursor: not-allowed;
 }
 
+.sm-error {
+  font-size: 12px;
+  color: #f87171;
+  margin: 0;
+}
+
 .sm-empty {
   font-size: 12px;
   color: var(--color-muted, #5a6888);
@@ -179,6 +185,29 @@
 .sm-toggle.off {
   background: rgba(255, 255, 255, 0.06);
   color: var(--color-muted, #5a6888);
+}
+
+.sm-run-btn {
+  padding: 4px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  color: #5ad6b5;
+  cursor: pointer;
+  transition: color 0.2s, opacity 0.2s;
+}
+.sm-run-btn:hover { color: #7de8cc; }
+.sm-run-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@keyframes sm-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.sm-spin {
+  animation: sm-spin 1s linear infinite;
 }
 
 .sm-history-btn,

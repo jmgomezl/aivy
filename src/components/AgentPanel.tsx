@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { LiveAgent, ToolCatalogResponse, ToolCatalogEntry, ToolWorkflow, ToolCatalogGroup, ActivityEvent, AgentSpendingResponse, WalletState } from '../types'
 import { statusMeta, toneClass } from '../data'
 import { requestJson } from '../utils'
+import { useToast } from '../hooks/useToast'
 import ChatPanel from './ChatPanel'
 import ScheduleManager from './ScheduleManager'
 import TriggerManager from './TriggerManager'
@@ -61,6 +62,25 @@ export default function AgentPanel({
   const [fundResult, setFundResult] = useState<string | null>(null)
   const [spendingData, setSpendingData] = useState<AgentSpendingResponse | null>(null)
   const [spendingLoading, setSpendingLoading] = useState(false)
+  const { addToast } = useToast()
+  const lastSeenEventRef = useRef<string | null>(null)
+
+  // Toast on background automation events
+  useEffect(() => {
+    if (events.length === 0) return
+    // On first render, just record the latest event ID
+    if (lastSeenEventRef.current === null) {
+      lastSeenEventRef.current = events[0]?.id ?? null
+      return
+    }
+    for (const evt of events) {
+      if (evt.id === lastSeenEventRef.current) break
+      if (evt.label.includes(agent.name) && (evt.label.includes('(schedule)') || evt.label.includes('(trigger)'))) {
+        addToast(evt.label, 'info')
+      }
+    }
+    lastSeenEventRef.current = events[0]?.id ?? null
+  }, [events, agent.name, addToast])
 
   useEffect(() => {
     if (activeTab === 'spending') {

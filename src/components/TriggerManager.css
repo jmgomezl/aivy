@@ -122,6 +122,12 @@
   cursor: not-allowed;
 }
 
+.tm-error {
+  font-size: 12px;
+  color: #f87171;
+  margin: 0;
+}
+
 .tm-empty {
   font-size: 12px;
   color: var(--color-muted, #5a6888);
