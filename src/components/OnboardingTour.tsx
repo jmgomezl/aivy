@@ -68,10 +68,10 @@ export default function OnboardingTour({ onComplete }: { onComplete: () => void 
         <p>{current.body}</p>
 
         <div className="onboarding-dots">
-          {steps.map((_, i) => (
+          {steps.map((s, i) => (
             <span
               className={`onboarding-dot ${i === step ? 'is-active' : ''} ${i < step ? 'is-done' : ''}`}
-              key={i}
+              key={s.title}
             />
           ))}
         </div>

@@ -105,7 +105,8 @@ async function pollHbarInflow(
       })
     }
     return results
-  } catch {
+  } catch (err) {
+    console.warn(`[EventPoller] hbar_inflow fetch failed for ${accountId}:`, err instanceof Error ? err.message : err)
     return []
   }
 }
@@ -138,7 +139,8 @@ async function pollHcsMessage(
         timestamp: msg.consensus_timestamp ?? '',
       }
     })
-  } catch {
+  } catch (err) {
+    console.warn(`[EventPoller] hcs_message fetch failed for topic ${topicId}:`, err instanceof Error ? err.message : err)
     return []
   }
 }
@@ -180,7 +182,8 @@ async function pollTokenTransfer(
       }
     }
     return results
-  } catch {
+  } catch (err) {
+    console.warn(`[EventPoller] token_transfer fetch failed for ${accountId}:`, err instanceof Error ? err.message : err)
     return []
   }
 }

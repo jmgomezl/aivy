@@ -405,9 +405,9 @@ export default function DemoCoach({
 
             <div className="demo-coach-footer">
               <div className="demo-coach-dots">
-                {steps.map((_, i) => (
+                {steps.map((s, i) => (
                   <span
-                    key={i}
+                    key={s.title}
                     className={`demo-coach-dot ${i < step ? 'is-done' : ''} ${i === step ? 'is-active' : ''}`}
                   />
                 ))}
