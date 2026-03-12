@@ -72,9 +72,12 @@ export default function ChatPanel({ agent, userAccountId, onAgentReply, onRefres
     }
   }, [messages, isLoading])
 
-  // Focus input on mount
+  // Focus input on mount (skip on narrow screens to avoid mobile keyboard popup)
   useEffect(() => {
-    inputRef.current?.focus()
+    if (window.innerWidth > 768) {
+      const timer = window.setTimeout(() => inputRef.current?.focus(), 100)
+      return () => window.clearTimeout(timer)
+    }
   }, [])
 
   const sendMessage = useCallback(async (text?: string) => {

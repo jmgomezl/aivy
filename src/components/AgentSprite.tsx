@@ -109,6 +109,7 @@ export default function AgentSprite({ agent, isSelected, isActive, bobDelay, onC
     <button
       className={spriteClass}
       onClick={onClick}
+      aria-label={`${agent.name} — ${statusMeta[agent.status].label}`}
       style={{
         left: `calc(${agent.x}% - 38px)`,
         top: `calc(${agent.y}% - 38px)`,
@@ -125,10 +126,10 @@ export default function AgentSprite({ agent, isSelected, isActive, bobDelay, onC
       )}
 
       <span className="sprite-portrait">
-        <img alt="" className="pixel-image" src={agent.sprite} />
+        <img alt={agent.name} className="pixel-image" src={agent.sprite} />
       </span>
 
-      <span className="sprite-name">{agent.name.split(' ')[0]}</span>
+      <span className="sprite-name" title={agent.name}>{agent.name.split(' ')[0]}</span>
       <span className="sprite-status">{statusMeta[agent.status].label}</span>
 
       {isWorking && (
