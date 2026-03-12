@@ -33,8 +33,8 @@ import * as db from './db.js'
 import { initAuth, generateChallenge, consumeChallenge, verifyAccountExists, issueToken } from './auth.js'
 import { authMiddleware, requireAuth, type AuthRequest } from './middleware.js'
 import { deployLimiter, chatLimiter, toolLimiter, readLimiter } from './rateLimiter.js'
-import { startSchedule, stopSchedule, validateCron } from './scheduler.js'
-import { startPoller } from './eventPoller.js'
+import { startSchedule, stopSchedule, stopAllSchedules, validateCron, acquireAgentLock, releaseAgentLock } from './scheduler.js'
+import { startPoller, stopPoller } from './eventPoller.js'
 
 dotenv.config()
 initMasterKey()
@@ -162,10 +162,10 @@ type ResultReference = {
 const capabilityGroupSchema = z.enum(capabilityGroupIds)
 
 const deploymentSchema = z.object({
-  templateId: z.string(),
+  templateId: z.string().min(1).max(80),
   name: z.string().min(2).max(80),
-  room: z.string(),
-  guardrail: z.string(),
+  room: z.string().min(1).max(120),
+  guardrail: z.string().min(1).max(500),
   vaultProtected: z.boolean(),
   vaultCapHbar: z.number().min(0).max(100000).optional(),
   launchNote: z.string().max(240).optional(),
@@ -1281,6 +1281,12 @@ const pushActivity = (label: string, tone: ActivityTone) => {
 const isConfigured = Boolean(config.operatorAccountId && config.operatorPrivateKey)
 const demoMode = !isConfigured
 
+// ─── Validation Helper ────────────────────────────
+function flattenZodError(zodError: z.ZodError): string {
+  const issues = zodError.issues.map((i) => `${i.path.join('.')}: ${i.message}`)
+  return issues.join('; ') || 'Validation failed.'
+}
+
 // ─── Ownership Helper ─────────────────────────────
 // Checks that the authenticated user owns the agent (or it's a shared demo/legacy agent)
 const SHARED_USER_IDS = new Set(['demo', 'legacy', 'anonymous'])
@@ -1945,7 +1951,7 @@ app.get('/api/tool-catalog', readLimiter, (_request, response) => {
 app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) => {
   const parsed = deploymentSchema.safeParse(request.body)
   if (!parsed.success) {
-    response.status(400).json({ error: parsed.error.flatten() })
+    response.status(400).json({ error: flattenZodError(parsed.error) })
     return
   }
 
@@ -2063,11 +2069,13 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
       walletType,
     }
 
-    db.insertDeployment(deployment)
-    pushActivity(
-      `${name} deployed with ${capabilitySelection.length} capability bundles and ${vaultProtected ? 'vault guardrails' : 'direct execution permissions'}.`,
-      vaultProtected ? 'vault' : 'success',
-    )
+    db.runInTransaction(() => {
+      db.insertDeployment(deployment)
+      pushActivity(
+        `${name} deployed with ${capabilitySelection.length} capability bundles and ${vaultProtected ? 'vault guardrails' : 'direct execution permissions'}.`,
+        vaultProtected ? 'vault' : 'success',
+      )
+    })
 
     response.status(201).json({
       deployment: safeDeployment(deployment),
@@ -2154,7 +2162,7 @@ const fundSchema = z.object({
 app.post('/api/agents/:agentId/fund', requireAuth, toolLimiter, async (request, response) => {
   const parsed = fundSchema.safeParse(request.body)
   if (!parsed.success) {
-    response.status(400).json({ error: parsed.error.flatten() })
+    response.status(400).json({ error: flattenZodError(parsed.error) })
     return
   }
 
@@ -2208,7 +2216,7 @@ app.post('/api/agents/:agentId/fund', requireAuth, toolLimiter, async (request, 
 app.post('/api/agents/:agentId/run', requireAuth, toolLimiter, async (request, response) => {
   const parsed = runAgentSchema.safeParse(request.body)
   if (!parsed.success) {
-    response.status(400).json({ error: parsed.error.flatten() })
+    response.status(400).json({ error: flattenZodError(parsed.error) })
     return
   }
 
@@ -2287,7 +2295,7 @@ app.post('/api/agents/:agentId/run', requireAuth, toolLimiter, async (request, r
 app.post('/api/agents/:agentId/tools/:toolName', requireAuth, toolLimiter, async (request, response) => {
   const parsed = invokeToolSchema.safeParse(request.body)
   if (!parsed.success) {
-    response.status(400).json({ error: parsed.error.flatten() })
+    response.status(400).json({ error: flattenZodError(parsed.error) })
     return
   }
 
@@ -2367,7 +2375,7 @@ app.post('/api/agents/:agentId/tools/:toolName', requireAuth, toolLimiter, async
 app.post('/api/agents/:agentId/pause', requireAuth, async (request, response) => {
   const parsed = pauseSchema.safeParse(request.body)
   if (!parsed.success) {
-    response.status(400).json({ error: parsed.error.flatten() })
+    response.status(400).json({ error: flattenZodError(parsed.error) })
     return
   }
 
@@ -2438,8 +2446,10 @@ app.delete('/api/agents/:agentId', requireAuth, (request, response) => {
     return
   }
 
-  db.deleteDeployment(request.params.agentId)
-  pushActivity(`${deployment.name} removed from the Aivy floor.`, 'system')
+  db.runInTransaction(() => {
+    db.deleteDeployment(request.params.agentId)
+    pushActivity(`${deployment.name} removed from the Aivy floor.`, 'system')
+  })
   response.status(204).end()
 })
 
@@ -2512,7 +2522,7 @@ const chatSchema = z.object({
 app.post('/api/agents/:agentId/chat', requireAuth, chatLimiter, async (request, response) => {
   const parsed = chatSchema.safeParse(request.body)
   if (!parsed.success) {
-    response.status(400).json({ error: parsed.error.flatten() })
+    response.status(400).json({ error: flattenZodError(parsed.error) })
     return
   }
 
@@ -2718,6 +2728,12 @@ async function executeScheduledPrompt(
     return 'Agent is paused or not found.'
   }
 
+  // Prevent concurrent runs for the same agent
+  if (!acquireAgentLock(deploymentId)) {
+    console.log(`[${source}] Skipping — agent ${deploymentId} is already running.`)
+    return 'Agent is already executing another task.'
+  }
+
   const execId = source === 'schedule'
     ? db.insertScheduleExecution(sourceId, deploymentId)
     : 0
@@ -2755,6 +2771,8 @@ async function executeScheduledPrompt(
     }
     console.error(`[${source}] Failed for deployment ${deploymentId}:`, errMsg)
     return errMsg
+  } finally {
+    releaseAgentLock(deploymentId)
   }
 }
 
@@ -2822,7 +2840,7 @@ function routeMessageToAgent(
 app.post('/api/chat/route', requireAuth, chatLimiter, async (request, response) => {
   const parsed = routeSchema.safeParse(request.body)
   if (!parsed.success) {
-    response.status(400).json({ error: parsed.error.flatten() })
+    response.status(400).json({ error: flattenZodError(parsed.error) })
     return
   }
 
@@ -3102,7 +3120,7 @@ const coordinateSchema = z.object({
 app.post('/api/agents/:agentId/coordinate', requireAuth, async (request, response) => {
   const parsed = coordinateSchema.safeParse(request.body)
   if (!parsed.success) {
-    response.status(400).json({ error: parsed.error.flatten() })
+    response.status(400).json({ error: flattenZodError(parsed.error) })
     return
   }
 
@@ -3478,7 +3496,7 @@ app.get('/api/agents/:agentId/schedules', readLimiter, (request, response) => {
 
 app.post('/api/agents/:agentId/schedules', requireAuth, toolLimiter, (request, response) => {
   const parsed = scheduleSchema.safeParse(request.body)
-  if (!parsed.success) { response.status(400).json({ error: parsed.error.flatten() }); return }
+  if (!parsed.success) { response.status(400).json({ error: flattenZodError(parsed.error) }); return }
 
   const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
@@ -3513,7 +3531,7 @@ app.post('/api/agents/:agentId/schedules', requireAuth, toolLimiter, (request, r
 
 app.put('/api/agents/:agentId/schedules/:schedId', requireAuth, (request, response) => {
   const parsed = scheduleUpdateSchema.safeParse(request.body)
-  if (!parsed.success) { response.status(400).json({ error: parsed.error.flatten() }); return }
+  if (!parsed.success) { response.status(400).json({ error: flattenZodError(parsed.error) }); return }
 
   const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
@@ -3617,7 +3635,7 @@ app.get('/api/agents/:agentId/triggers', readLimiter, (request, response) => {
 
 app.post('/api/agents/:agentId/triggers', requireAuth, toolLimiter, (request, response) => {
   const parsed = triggerSchema.safeParse(request.body)
-  if (!parsed.success) { response.status(400).json({ error: parsed.error.flatten() }); return }
+  if (!parsed.success) { response.status(400).json({ error: flattenZodError(parsed.error) }); return }
 
   const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
@@ -3643,7 +3661,7 @@ app.post('/api/agents/:agentId/triggers', requireAuth, toolLimiter, (request, re
 
 app.put('/api/agents/:agentId/triggers/:trigId', requireAuth, (request, response) => {
   const parsed = triggerUpdateSchema.safeParse(request.body)
-  if (!parsed.success) { response.status(400).json({ error: parsed.error.flatten() }); return }
+  if (!parsed.success) { response.status(400).json({ error: flattenZodError(parsed.error) }); return }
 
   const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
@@ -3699,6 +3717,18 @@ function bootstrapEventPoller(): void {
     30_000,
   )
 }
+
+// ─── Graceful Shutdown ──────────────────────────────
+function gracefulShutdown(signal: string): void {
+  console.log(`[Aivy] Received ${signal}, shutting down...`)
+  stopAllSchedules()
+  stopPoller()
+  db.close()
+  process.exit(0)
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
+process.on('SIGINT', () => gracefulShutdown('SIGINT'))
 
 app.listen(config.port, () => {
   const mode = isConfigured ? 'live testnet mode' : demoMode ? 'demo mode (no Hedera keys)' : 'config required mode'

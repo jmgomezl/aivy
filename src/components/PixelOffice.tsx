@@ -131,7 +131,7 @@ export default function PixelOffice({
             </defs>
             {coordLinks.map(({ src, tgt }, i) => (
               <line
-                key={i}
+                key={`${src.x}-${src.y}-${tgt.x}-${tgt.y}-${i}`}
                 x1={src.x}
                 y1={src.y}
                 x2={tgt.x}

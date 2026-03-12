@@ -884,6 +884,12 @@ export function migrateFromJson(): void {
   }
 }
 
+/** Run multiple DB operations atomically */
+export function runInTransaction<T>(fn: () => T): T {
+  const tx = db.transaction(fn)
+  return tx()
+}
+
 export function close(): void {
   db.close()
 }
