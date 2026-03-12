@@ -7,6 +7,23 @@ type ScheduledTask = {
 
 const activeTasks = new Map<string, ScheduledTask>()
 
+// Per-agent lock to prevent concurrent schedule/trigger executions
+const runningAgents = new Set<string>()
+
+export function isAgentRunning(deploymentId: string): boolean {
+  return runningAgents.has(deploymentId)
+}
+
+export function acquireAgentLock(deploymentId: string): boolean {
+  if (runningAgents.has(deploymentId)) return false
+  runningAgents.add(deploymentId)
+  return true
+}
+
+export function releaseAgentLock(deploymentId: string): void {
+  runningAgents.delete(deploymentId)
+}
+
 export function startSchedule(
   id: string,
   cronExpression: string,

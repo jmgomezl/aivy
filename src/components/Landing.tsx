@@ -116,7 +116,7 @@ export default function Landing({ onEnter, onTryDemo }: LandingProps) {
           <div className="demo-ticker">
             <div className="demo-ticker-track">
               {[...demoTickerItems, ...demoTickerItems].map((item, i) => (
-                <span className={`demo-ticker-item demo-ticker-${item.tone}`} key={i}>
+                <span className={`demo-ticker-item demo-ticker-${item.tone}`} key={`${item.text}-${i}`}>
                   {item.text}
                 </span>
               ))}

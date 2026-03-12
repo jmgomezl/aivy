@@ -311,7 +311,7 @@ function ChatBubble({
       )}
       <div className="chat-content">
         {message.content.split('\n').map((line, i) => (
-          <p key={i}>{line || '\u00A0'}</p>
+          <p key={`${message.id}-l${i}`}>{line || '\u00A0'}</p>
         ))}
       </div>
     </div>
