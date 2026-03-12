@@ -20,6 +20,7 @@ type DeployModalProps = {
     launchNote: string
     capabilityGroups: CapabilityGroupId[]
     walletType: 'platform' | 'dedicated'
+    initialFundingHbar?: number
   }) => void
   onClose: () => void
 }
@@ -41,6 +42,7 @@ export default function DeployModal({
   )
   const [vaultRequired, setVaultRequired] = useState(template.id !== 'governance-relay')
   const [walletType, setWalletType] = useState<'platform' | 'dedicated'>('dedicated')
+  const [initialFundingHbar, setInitialFundingHbar] = useState(10)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [wizardValues, setWizardValues] = useState<Record<string, unknown>>(
     wizard ? deepClone(wizard.defaults) : {},
@@ -71,6 +73,7 @@ export default function DeployModal({
       launchNote: launchPreview.launchNote,
       capabilityGroups,
       walletType,
+      initialFundingHbar: walletType === 'dedicated' ? initialFundingHbar : undefined,
     })
   }
 
@@ -139,6 +142,27 @@ export default function DeployModal({
               {walletType === 'dedicated' ? 'ON' : 'OFF'}
             </button>
           </label>
+
+          {walletType === 'dedicated' && (
+            <div className="dm-funding-field">
+              <label className="dm-field">
+                <span>
+                  Initial Funding (HBAR)
+                  <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">The platform operator sends this amount of HBAR to the agent's new dedicated account during deployment. This is the agent's starting balance for autonomous operations.</span></span>
+                </span>
+                <input
+                  type="number"
+                  value={initialFundingHbar}
+                  onChange={(e) => setInitialFundingHbar(Math.max(1, Math.min(1000, Number(e.target.value) || 1)))}
+                  min={1}
+                  max={1000}
+                  step={1}
+                  placeholder="10"
+                />
+                <small>Platform sends this HBAR to the agent's new account</small>
+              </label>
+            </div>
+          )}
 
           <label className="dm-field dm-toggle-field">
             <div>
