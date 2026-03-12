@@ -343,6 +343,9 @@ export default function AgentPanel({
           </button>
         </div>
 
+        {/* ─── Tab Content (scrollable) ────── */}
+        <div className="ap-tab-content">
+
         {/* ─── Chat Tab ──────────────────────── */}
         {activeTab === 'chat' && chatEnabled && (
           <ChatPanel
@@ -702,6 +705,8 @@ export default function AgentPanel({
             />
           </div>
         )}
+
+        </div>{/* end .ap-tab-content */}
       </aside>
     </div>
   )
