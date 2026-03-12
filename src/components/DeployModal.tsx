@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import type { CapabilityGroupId, ToolCatalogResponse } from '../types'
+import type { CapabilityGroupId, LiveAgent, ToolCatalogResponse } from '../types'
 import { templates, launchWizardByTemplate, toneClass } from '../data'
 import { deepClone, buildLaunchPayload } from '../utils'
 import './DeployModal.css'
@@ -9,6 +9,7 @@ type DeployModalProps = {
   catalog: ToolCatalogResponse | null
   isDeploying: boolean
   existingNames: string[]
+  existingAgents?: LiveAgent[]
   deployError?: string
   onDeploy: (payload: {
     templateId: string
@@ -21,6 +22,7 @@ type DeployModalProps = {
     capabilityGroups: CapabilityGroupId[]
     walletType: 'platform' | 'dedicated'
     initialFundingHbar?: number
+    coordinationPartners?: string[]
   }) => void
   onClose: () => void
 }
@@ -30,6 +32,7 @@ export default function DeployModal({
   catalog,
   isDeploying,
   existingNames,
+  existingAgents = [],
   deployError,
   onDeploy,
   onClose,
@@ -50,6 +53,7 @@ export default function DeployModal({
   const [capabilityGroups, setCapabilityGroups] = useState<CapabilityGroupId[]>(
     catalog?.defaultCapabilityGroupsByTemplate[template.id] ?? [],
   )
+  const [coordinationPartners, setCoordinationPartners] = useState<string[]>([])
 
   const isDuplicateName = existingNames.some(
     (n) => n.toLowerCase() === agentName.trim().toLowerCase(),
@@ -74,6 +78,7 @@ export default function DeployModal({
       capabilityGroups,
       walletType,
       initialFundingHbar: walletType === 'dedicated' ? initialFundingHbar : undefined,
+      coordinationPartners: coordinationPartners.length > 0 ? coordinationPartners : undefined,
     })
   }
 
@@ -181,6 +186,55 @@ export default function DeployModal({
             </button>
           </label>
         </div>
+
+        {/* ─── Coordination Partners ──────────── */}
+        {existingAgents.length > 0 && (
+          <div className="dm-coordination">
+            <span className="dm-coord-label">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5ad6b5" strokeWidth="2">
+                <path d="M8 12h8M12 8v8" />
+                <circle cx="5" cy="5" r="3" />
+                <circle cx="19" cy="5" r="3" />
+                <circle cx="19" cy="19" r="3" />
+                <circle cx="5" cy="19" r="3" />
+              </svg>
+              Coordinate with existing agents
+              <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">Link this agent to existing agents for cross-agent coordination. Linked agents can send each other instructions and collaborate on tasks automatically.</span></span>
+            </span>
+            <div className="dm-coord-grid">
+              {existingAgents.filter(a => a.status !== 'paused').map(a => {
+                const agentTemplate = templates.find(t => t.id === a.templateId)
+                const isSelected = coordinationPartners.includes(a.id)
+                return (
+                  <button
+                    className={isSelected ? 'dm-coord-card is-active' : 'dm-coord-card'}
+                    key={a.id}
+                    onClick={() => setCoordinationPartners(prev =>
+                      prev.includes(a.id) ? prev.filter(id => id !== a.id) : [...prev, a.id]
+                    )}
+                    type="button"
+                  >
+                    <img
+                      alt=""
+                      className="pixel-image"
+                      src={a.sprite}
+                      style={{ width: 22, height: 22, imageRendering: 'pixelated' }}
+                    />
+                    <div className="dm-coord-info">
+                      <strong>{a.name}</strong>
+                      <span>{agentTemplate?.room ?? 'Office'}</span>
+                    </div>
+                    {isSelected && (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5ad6b5" strokeWidth="2.5">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* ─── Advanced Options ────────────────── */}
         <button

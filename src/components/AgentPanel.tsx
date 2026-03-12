@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { LiveAgent, ToolCatalogResponse, ToolCatalogEntry, ToolWorkflow, ToolCatalogGroup, ActivityEvent, AgentSpendingResponse, WalletState } from '../types'
-import { statusMeta, toneClass } from '../data'
+import { statusMeta, toneClass, templates } from '../data'
 import { requestJson } from '../utils'
 import { useToast } from '../hooks/useToast'
 import ChatPanel from './ChatPanel'
@@ -494,6 +494,66 @@ export default function AgentPanel({
               {isExporting ? 'Exporting...' : 'Export Audit Report'}
             </button>
 
+            {/* ─── Coordination ────────────────────── */}
+            {otherAgents.length > 0 && (
+              <div className="ap-coord-section">
+                <div className="ap-coord-header">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5ad6b5" strokeWidth="2">
+                    <path d="M8 12h8M12 8v8" />
+                    <circle cx="5" cy="5" r="3" />
+                    <circle cx="19" cy="5" r="3" />
+                    <circle cx="19" cy="19" r="3" />
+                    <circle cx="5" cy="19" r="3" />
+                  </svg>
+                  <span className="ap-section-label">Agent Coordination</span>
+                </div>
+                <div className="ap-coord-form">
+                  <select
+                    className="ap-coord-select"
+                    value={coordTarget}
+                    onChange={(e) => setCoordTarget(e.target.value)}
+                  >
+                    <option value="">Select target agent...</option>
+                    {otherAgents.map(a => {
+                      const tpl = templates.find(t => t.id === a.templateId)
+                      return (
+                        <option key={a.id} value={a.id}>
+                          {a.name} — {tpl?.room ?? 'Office'}
+                        </option>
+                      )
+                    })}
+                  </select>
+                  <div className="ap-coord-input-row">
+                    <input
+                      className="ap-coord-input"
+                      placeholder="Send a coordination message..."
+                      value={coordMsg}
+                      onChange={(e) => setCoordMsg(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') void handleCoordinate() }}
+                    />
+                    <button
+                      className="ap-coord-send"
+                      onClick={() => void handleCoordinate()}
+                      disabled={coordSending || !coordTarget || !coordMsg.trim()}
+                      type="button"
+                      title="Send coordination message"
+                    >
+                      {coordSending ? (
+                        <span className="ap-coord-spinner" />
+                      ) : (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </div>
+                {coordResult && (
+                  <p className={`ap-coord-result ${coordResult.includes('delivered') ? 'success' : ''}`}>{coordResult}</p>
+                )}
+              </div>
+            )}
+
             {/* ─── Capabilities ────────────────────── */}
             <div className="ap-section">
               <div className="ap-section-header">
@@ -568,43 +628,6 @@ export default function AgentPanel({
               <div className="ap-info">
                 <span>Last action</span>
                 <p>{agent.lastAction}</p>
-              </div>
-            )}
-
-            {/* ─── Coordination ────────────────────── */}
-            {otherAgents.length > 0 && (
-              <div className="ap-section">
-                <span className="ap-section-label">Coordinate with agent</span>
-                <div className="ap-coord-form">
-                  <select
-                    className="ap-coord-select"
-                    value={coordTarget}
-                    onChange={(e) => setCoordTarget(e.target.value)}
-                  >
-                    <option value="">Select agent...</option>
-                    {otherAgents.map(a => (
-                      <option key={a.id} value={a.id}>{a.name}</option>
-                    ))}
-                  </select>
-                  <input
-                    className="ap-coord-input"
-                    placeholder="Message to send..."
-                    value={coordMsg}
-                    onChange={(e) => setCoordMsg(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') void handleCoordinate() }}
-                  />
-                  <button
-                    className="ap-coord-send"
-                    onClick={() => void handleCoordinate()}
-                    disabled={coordSending || !coordTarget || !coordMsg.trim()}
-                    type="button"
-                  >
-                    {coordSending ? '...' : 'Send'}
-                  </button>
-                </div>
-                {coordResult && (
-                  <p className="ap-coord-result">{coordResult}</p>
-                )}
               </div>
             )}
 
