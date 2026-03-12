@@ -207,7 +207,7 @@ export default function ChatPanel({ agent, userAccountId, onAgentReply, onRefres
         <textarea
           ref={inputRef}
           className="chat-input"
-          placeholder="Ask your agent..."
+          placeholder={`Ask ${agent.name}... e.g. "Create a token called HackCoin"`}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
