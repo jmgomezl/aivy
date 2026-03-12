@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import type { CapabilityGroupId, LiveAgent, ToolCatalogResponse } from '../types'
 import { templates, launchWizardByTemplate, toneClass } from '../data'
 import { deepClone, buildLaunchPayload } from '../utils'
@@ -10,6 +10,8 @@ type DeployModalProps = {
   isDeploying: boolean
   existingNames: string[]
   existingAgents?: LiveAgent[]
+  operatorAccountId?: string | null
+  mirrorNodeUrl?: string
   deployError?: string
   onDeploy: (payload: {
     templateId: string
@@ -33,6 +35,8 @@ export default function DeployModal({
   isDeploying,
   existingNames,
   existingAgents = [],
+  operatorAccountId,
+  mirrorNodeUrl,
   deployError,
   onDeploy,
   onClose,
@@ -54,6 +58,20 @@ export default function DeployModal({
     catalog?.defaultCapabilityGroupsByTemplate[template.id] ?? [],
   )
   const [coordinationPartners, setCoordinationPartners] = useState<string[]>([])
+  const [operatorBalance, setOperatorBalance] = useState<number | null>(null)
+
+  // Fetch operator balance from Mirror Node
+  useEffect(() => {
+    if (!operatorAccountId || !mirrorNodeUrl) return
+    const url = `${mirrorNodeUrl}/api/v1/balances?account.id=${operatorAccountId}&limit=1`
+    fetch(url, { signal: AbortSignal.timeout(8_000) })
+      .then(r => r.json())
+      .then((data: { balances?: Array<{ balance: number }> }) => {
+        const bal = data.balances?.[0]?.balance
+        if (typeof bal === 'number') setOperatorBalance(bal / 1e8) // tinybars to HBAR
+      })
+      .catch(() => setOperatorBalance(null))
+  }, [operatorAccountId, mirrorNodeUrl])
 
   const isDuplicateName = existingNames.some(
     (n) => n.toLowerCase() === agentName.trim().toLowerCase(),
@@ -164,7 +182,17 @@ export default function DeployModal({
                   step={1}
                   placeholder="10"
                 />
-                <small>Platform sends this HBAR to the agent's new account</small>
+                <div className="dm-funding-meta">
+                  <small>Platform sends this HBAR to the agent's new account</small>
+                  {operatorBalance !== null && (
+                    <span className={`dm-operator-bal ${initialFundingHbar > operatorBalance ? 'low' : ''}`}>
+                      Operator balance: <strong>{operatorBalance.toFixed(2)} ℏ</strong>
+                      {initialFundingHbar > operatorBalance && (
+                        <span className="dm-bal-warn"> — insufficient funds</span>
+                      )}
+                    </span>
+                  )}
+                </div>
               </label>
             </div>
           )}

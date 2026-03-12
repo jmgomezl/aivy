@@ -388,6 +388,8 @@ function App() {
           isDeploying={isDeploying}
           existingNames={live.agents.map((a) => a.name)}
           existingAgents={live.agents}
+          operatorAccountId={live.operatorAccountId}
+          mirrorNodeUrl={live.mirrorNodeUrl}
           deployError={deployError}
           onDeploy={handleDeploy}
           onClose={() => setDeployModalOpen(false)}
