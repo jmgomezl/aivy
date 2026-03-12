@@ -17,6 +17,8 @@ export function useLiveData() {
   const [mirrorNodeUrl, setMirrorNodeUrl] = useState('')
   const [chatEnabled, setChatEnabled] = useState(false)
   const [demoMode, setDemoMode] = useState(false)
+  const [isOffline, setIsOffline] = useState(false)
+  const [failCount, setFailCount] = useState(0)
 
   const refreshLive = useCallback(async () => {
     try {
@@ -30,6 +32,8 @@ export function useLiveData() {
       setCoordinations(payload.coordinations ?? [])
       setOperatorAccountId(payload.operatorAccountId ?? null)
       setMirrorNodeUrl(payload.mirrorNodeUrl ?? '')
+      setIsOffline(false)
+      setFailCount(0)
 
       if (payload.configured) {
         setNetworkLabel(`Hedera ${(payload.network ?? 'testnet').toUpperCase()}`)
@@ -45,6 +49,8 @@ export function useLiveData() {
         )
       }
     } catch (error) {
+      setIsOffline(true)
+      setFailCount((prev) => prev + 1)
       setServerConfigured(false)
       setNetworkLabel('Backend Offline')
       setStats(emptyStats)
@@ -59,11 +65,13 @@ export function useLiveData() {
 
   useEffect(() => {
     void refreshLive()
+    // Back off polling when offline: 10s normal, 20s after 3 failures, 30s after 6
+    const intervalMs = failCount >= 6 ? 30_000 : failCount >= 3 ? 20_000 : 10_000
     const interval = window.setInterval(() => {
       void refreshLive()
-    }, 10000)
+    }, intervalMs)
     return () => window.clearInterval(interval)
-  }, [refreshLive])
+  }, [refreshLive, failCount])
 
   return {
     agents,
@@ -74,6 +82,7 @@ export function useLiveData() {
     serverConfigured,
     chatEnabled,
     demoMode,
+    isOffline,
     serverMessage,
     setServerMessage,
     operatorAccountId,

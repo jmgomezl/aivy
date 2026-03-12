@@ -88,3 +88,21 @@ p {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
 }
+
+.offline-retry-btn {
+  margin-left: 6px;
+  padding: 3px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(242, 95, 92, 0.35);
+  background: rgba(242, 95, 92, 0.12);
+  color: #f2a35c;
+  font-size: 12px;
+  font-family: 'Space Grotesk', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.offline-retry-btn:hover {
+  background: rgba(242, 95, 92, 0.25);
+  border-color: rgba(242, 95, 92, 0.5);
+}

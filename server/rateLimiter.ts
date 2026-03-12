@@ -3,14 +3,11 @@ import type { Request } from 'express'
 
 type AuthRequest = Request & { userId?: string | null }
 
+// In demo mode, key by IP so each visitor gets their own bucket
 const keyGenerator = (req: Request): string => {
   const authReq = req as AuthRequest
+  if (authReq.userId === 'demo') return req.ip ?? 'demo-unknown'
   return authReq.userId ?? req.ip ?? 'unknown'
-}
-
-const skipDemo = (req: Request): boolean => {
-  const authReq = req as AuthRequest
-  return authReq.userId === 'demo'
 }
 
 const sharedOptions = {
@@ -22,34 +19,31 @@ const sharedOptions = {
 export const deployLimiter = rateLimit({
   ...sharedOptions,
   windowMs: 60 * 60 * 1000,
-  max: 5,
+  max: 10,
   keyGenerator,
-  skip: skipDemo,
-  message: { error: 'Deploy limit exceeded. Max 5 deployments per hour.' },
+  message: { error: 'Deploy limit exceeded. Max 10 deployments per hour.' },
 })
 
 export const chatLimiter = rateLimit({
   ...sharedOptions,
   windowMs: 60 * 1000,
-  max: 30,
+  max: 40,
   keyGenerator,
-  skip: skipDemo,
-  message: { error: 'Chat rate limit exceeded. Max 30 messages per minute.' },
+  message: { error: 'Chat rate limit exceeded. Max 40 messages per minute.' },
 })
 
 export const toolLimiter = rateLimit({
   ...sharedOptions,
   windowMs: 60 * 1000,
-  max: 60,
+  max: 80,
   keyGenerator,
-  skip: skipDemo,
-  message: { error: 'Tool invocation limit exceeded. Max 60 per minute.' },
+  message: { error: 'Tool invocation limit exceeded. Max 80 per minute.' },
 })
 
 export const readLimiter = rateLimit({
   ...sharedOptions,
   windowMs: 60 * 1000,
-  max: 120,
+  max: 150,
   keyGenerator: (req: Request) => req.ip ?? 'unknown',
-  message: { error: 'Read rate limit exceeded. Max 120 per minute.' },
+  message: { error: 'Read rate limit exceeded. Max 150 per minute.' },
 })
