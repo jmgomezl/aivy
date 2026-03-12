@@ -315,6 +315,14 @@
 
 .coord-line-anim {
   animation: coord-dash 2s linear infinite;
+  pointer-events: stroke;
+  cursor: help;
+}
+
+.coord-line-anim:hover {
+  stroke-width: 0.7;
+  opacity: 1 !important;
+  filter: drop-shadow(0 0 3px rgba(90, 214, 181, 0.5));
 }
 
 @keyframes coord-dash {

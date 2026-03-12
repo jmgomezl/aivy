@@ -129,7 +129,7 @@ export default function PixelOffice({
                 <path d="M0,0 L6,2 L0,4" fill="#5ad6b5" />
               </marker>
             </defs>
-            {coordLinks.map(({ src, tgt }, i) => (
+            {coordLinks.map(({ src, tgt, action }, i) => (
               <line
                 key={`${src.x}-${src.y}-${tgt.x}-${tgt.y}-${i}`}
                 x1={src.x}
@@ -137,12 +137,14 @@ export default function PixelOffice({
                 x2={tgt.x}
                 y2={tgt.y}
                 stroke="#5ad6b5"
-                strokeWidth="0.3"
-                strokeDasharray="1 1"
+                strokeWidth="0.4"
+                strokeDasharray="1.5 0.8"
                 markerEnd="url(#coord-arrow)"
-                opacity="0.6"
+                opacity="0.75"
                 className="coord-line-anim"
-              />
+              >
+                <title>{src.name} → {tgt.name}: {action}</title>
+              </line>
             ))}
           </svg>
         )}

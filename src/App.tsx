@@ -85,21 +85,37 @@ function App() {
     capabilityGroups: CapabilityGroupId[]
     walletType: 'platform' | 'dedicated'
     initialFundingHbar?: number
+    coordinationPartners?: string[]
   }) => {
     setIsDeploying(true)
     try {
+      const { coordinationPartners, ...deployPayload } = payload
       const result = await requestJson<DeployResponse>('/api/deploy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(deployPayload),
       })
+
+      // Send coordination introductions to selected partners
+      if (coordinationPartners?.length) {
+        for (const partnerId of coordinationPartners) {
+          void requestJson(`/api/agents/${result.deployment.id}/coordinate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              targetAgentId: partnerId,
+              message: `Hello! I'm ${payload.name}, a newly deployed agent. I've been linked to coordinate with you.`,
+            }),
+          }).catch(() => { /* non-critical */ })
+        }
+      }
 
       const template = templates.find((t) => t.id === payload.templateId)
       setSelectedAgentId(result.deployment.id)
       setDeployModalOpen(false)
       setResultDrawer({
         title: `${template?.name ?? 'Agent'} launched`,
-        message: `${payload.name} is live with ${payload.capabilityGroups.length} capability bundles. ${summarizeResultReferences(result.references)}`,
+        message: `${payload.name} is live with ${payload.capabilityGroups.length} capability bundles.${coordinationPartners?.length ? ` Linked to ${coordinationPartners.length} partner${coordinationPartners.length > 1 ? 's' : ''}.` : ''} ${summarizeResultReferences(result.references)}`,
         references: result.references,
       })
       playDeploy()
@@ -371,6 +387,7 @@ function App() {
           catalog={toolCatalog.catalog}
           isDeploying={isDeploying}
           existingNames={live.agents.map((a) => a.name)}
+          existingAgents={live.agents}
           deployError={deployError}
           onDeploy={handleDeploy}
           onClose={() => setDeployModalOpen(false)}
