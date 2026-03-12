@@ -28,15 +28,18 @@ export default function AgentSprite({ agent, isSelected, isActive, bobDelay, onC
     setBubbleFading(false)
     setBubble(truncated)
 
+    let removeTimer = 0
     const fadeTimer = window.setTimeout(() => {
       setBubbleFading(true)
-      const removeTimer = window.setTimeout(() => {
+      removeTimer = window.setTimeout(() => {
         setBubble(null)
       }, 500)
-      return () => window.clearTimeout(removeTimer)
     }, 5000)
 
-    return () => window.clearTimeout(fadeTimer)
+    return () => {
+      window.clearTimeout(fadeTimer)
+      window.clearTimeout(removeTimer)
+    }
   }, [lastChatMessage])
 
   // Fallback to template-based speech bubbles when no chat activity
@@ -47,21 +50,25 @@ export default function AgentSprite({ agent, isSelected, isActive, bobDelay, onC
     const messages = speechBubbles[agent.templateId] ?? speechBubbles['treasury-sentinel']
     let messageIndex = Math.floor(Math.random() * messages.length)
 
+    let activeFadeTimer = 0
+    let activeRemoveTimer = 0
+
     const showBubble = () => {
+      // Clear any pending timers from a previous bubble
+      window.clearTimeout(activeFadeTimer)
+      window.clearTimeout(activeRemoveTimer)
+
       setBubbleFading(false)
       setBubble(messages[messageIndex % messages.length])
       messageIndex++
 
       // Fade out after 3 seconds
-      const fadeTimer = window.setTimeout(() => {
+      activeFadeTimer = window.setTimeout(() => {
         setBubbleFading(true)
-        const removeTimer = window.setTimeout(() => {
+        activeRemoveTimer = window.setTimeout(() => {
           setBubble(null)
         }, 500)
-        return () => window.clearTimeout(removeTimer)
       }, 3000)
-
-      return () => window.clearTimeout(fadeTimer)
     }
 
     // First bubble after random delay (3-8s)
@@ -78,6 +85,8 @@ export default function AgentSprite({ agent, isSelected, isActive, bobDelay, onC
     return () => {
       window.clearTimeout(initialTimer)
       window.clearInterval(interval)
+      window.clearTimeout(activeFadeTimer)
+      window.clearTimeout(activeRemoveTimer)
     }
   }, [agent.templateId, agent.status, lastChatMessage])
 

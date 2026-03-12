@@ -82,7 +82,7 @@ async function pollHbarInflow(
   const url = `${mirrorNodeUrl}/transactions?account.id=${accountId}&type=CRYPTOTRANSFER&timestamp=gt:${sinceTs}&limit=10&order=asc`
 
   try {
-    const resp = await fetch(url)
+    const resp = await fetch(url, { signal: AbortSignal.timeout(10_000) })
     if (!resp.ok) return []
     const data = await resp.json() as { transactions?: Array<Record<string, unknown>> }
     const txs = data.transactions ?? []
@@ -120,7 +120,7 @@ async function pollHcsMessage(
   const url = `${mirrorNodeUrl}/topics/${topicId}/messages?timestamp=gt:${sinceTs}&limit=5&order=asc`
 
   try {
-    const resp = await fetch(url)
+    const resp = await fetch(url, { signal: AbortSignal.timeout(10_000) })
     if (!resp.ok) return []
     const data = await resp.json() as { messages?: Array<Record<string, unknown>> }
     const messages = data.messages ?? []
@@ -155,7 +155,7 @@ async function pollTokenTransfer(
   const url = `${mirrorNodeUrl}/transactions?account.id=${accountId}&timestamp=gt:${sinceTs}&limit=10&order=asc`
 
   try {
-    const resp = await fetch(url)
+    const resp = await fetch(url, { signal: AbortSignal.timeout(10_000) })
     if (!resp.ok) return []
     const data = await resp.json() as { transactions?: Array<Record<string, unknown>> }
     const txs = data.transactions ?? []

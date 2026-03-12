@@ -40,6 +40,16 @@ dotenv.config()
 initMasterKey()
 initAuth()
 
+// ─── Global Error Handlers ─────────────────────────
+process.on('unhandledRejection', (reason) => {
+  console.error('[Aivy] Unhandled rejection:', reason)
+})
+process.on('uncaughtException', (err) => {
+  console.error('[Aivy] Uncaught exception:', err)
+  // Give the process a moment to flush logs, then exit
+  setTimeout(() => process.exit(1), 1000)
+})
+
 const config = {
   port: Number(process.env.SERVER_PORT ?? process.env.PORT ?? 3001),
   network: process.env.HEDERA_NETWORK ?? 'testnet',
@@ -1271,6 +1281,19 @@ const pushActivity = (label: string, tone: ActivityTone) => {
 const isConfigured = Boolean(config.operatorAccountId && config.operatorPrivateKey)
 const demoMode = !isConfigured
 
+// ─── Ownership Helper ─────────────────────────────
+// Checks that the authenticated user owns the agent (or it's a shared demo/legacy agent)
+const SHARED_USER_IDS = new Set(['demo', 'legacy', 'anonymous'])
+
+function assertAgentOwnership(
+  deployment: { userId: string },
+  req: import('express').Request,
+): boolean {
+  if (SHARED_USER_IDS.has(deployment.userId)) return true
+  const authReq = req as AuthRequest
+  return authReq.userId === deployment.userId
+}
+
 const createClient = () => {
   if (!isConfigured) {
     throw new Error('Hedera credentials are missing.')
@@ -2140,6 +2163,10 @@ app.post('/api/agents/:agentId/fund', requireAuth, toolLimiter, async (request, 
     response.status(404).json({ error: 'Deployment not found.' })
     return
   }
+  if (!assertAgentOwnership(deployment, request)) {
+    response.status(403).json({ error: 'You do not own this agent.' })
+    return
+  }
 
   db.recordSpending(
     deployment.id,
@@ -2188,6 +2215,10 @@ app.post('/api/agents/:agentId/run', requireAuth, toolLimiter, async (request, r
   const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) {
     response.status(404).json({ error: 'Deployment not found.' })
+    return
+  }
+  if (!assertAgentOwnership(deployment, request)) {
+    response.status(403).json({ error: 'You do not own this agent.' })
     return
   }
 
@@ -2263,6 +2294,10 @@ app.post('/api/agents/:agentId/tools/:toolName', requireAuth, toolLimiter, async
   const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) {
     response.status(404).json({ error: 'Deployment not found.' })
+    return
+  }
+  if (!assertAgentOwnership(deployment, request)) {
+    response.status(403).json({ error: 'You do not own this agent.' })
     return
   }
 
@@ -2341,6 +2376,10 @@ app.post('/api/agents/:agentId/pause', requireAuth, async (request, response) =>
     response.status(404).json({ error: 'Deployment not found.' })
     return
   }
+  if (!assertAgentOwnership(deployment, request)) {
+    response.status(403).json({ error: 'You do not own this agent.' })
+    return
+  }
 
   try {
     const vaultResult = deployment.contractId
@@ -2392,6 +2431,10 @@ app.delete('/api/agents/:agentId', requireAuth, (request, response) => {
   const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) {
     response.status(404).json({ error: 'Deployment not found.' })
+    return
+  }
+  if (!assertAgentOwnership(deployment, request)) {
+    response.status(403).json({ error: 'You do not own this agent.' })
     return
   }
 
@@ -2476,6 +2519,10 @@ app.post('/api/agents/:agentId/chat', requireAuth, chatLimiter, async (request, 
   const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) {
     response.status(404).json({ error: 'Deployment not found.' })
+    return
+  }
+  if (!assertAgentOwnership(deployment, request)) {
+    response.status(403).json({ error: 'You do not own this agent.' })
     return
   }
 
@@ -3064,6 +3111,10 @@ app.post('/api/agents/:agentId/coordinate', requireAuth, async (request, respons
     response.status(404).json({ error: 'Source agent not found.' })
     return
   }
+  if (!assertAgentOwnership(source, request)) {
+    response.status(403).json({ error: 'You do not own this agent.' })
+    return
+  }
 
   const target = db.getDeployment(parsed.data.targetAgentId)
   if (!target) {
@@ -3431,6 +3482,7 @@ app.post('/api/agents/:agentId/schedules', requireAuth, toolLimiter, (request, r
 
   const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
+  if (!assertAgentOwnership(deployment, request)) { response.status(403).json({ error: 'You do not own this agent.' }); return }
 
   if (!validateCron(parsed.data.cronExpression)) {
     response.status(400).json({ error: 'Invalid cron expression' })
@@ -3463,6 +3515,10 @@ app.put('/api/agents/:agentId/schedules/:schedId', requireAuth, (request, respon
   const parsed = scheduleUpdateSchema.safeParse(request.body)
   if (!parsed.success) { response.status(400).json({ error: parsed.error.flatten() }); return }
 
+  const deployment = db.getDeployment(request.params.agentId)
+  if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
+  if (!assertAgentOwnership(deployment, request)) { response.status(403).json({ error: 'You do not own this agent.' }); return }
+
   const existing = db.getSchedule(request.params.schedId)
   if (!existing || existing.deploymentId !== request.params.agentId) {
     response.status(404).json({ error: 'Schedule not found' })
@@ -3491,6 +3547,10 @@ app.put('/api/agents/:agentId/schedules/:schedId', requireAuth, (request, respon
 })
 
 app.delete('/api/agents/:agentId/schedules/:schedId', requireAuth, (request, response) => {
+  const deployment = db.getDeployment(request.params.agentId)
+  if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
+  if (!assertAgentOwnership(deployment, request)) { response.status(403).json({ error: 'You do not own this agent.' }); return }
+
   const existing = db.getSchedule(request.params.schedId)
   if (!existing || existing.deploymentId !== request.params.agentId) {
     response.status(404).json({ error: 'Schedule not found' })
@@ -3512,6 +3572,10 @@ app.get('/api/agents/:agentId/schedules/:schedId/executions', readLimiter, (requ
 })
 
 app.post('/api/agents/:agentId/schedules/:schedId/run', requireAuth, toolLimiter, async (request, response) => {
+  const deployment = db.getDeployment(request.params.agentId)
+  if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
+  if (!assertAgentOwnership(deployment, request)) { response.status(403).json({ error: 'You do not own this agent.' }); return }
+
   const existing = db.getSchedule(request.params.schedId)
   if (!existing || existing.deploymentId !== request.params.agentId) {
     response.status(404).json({ error: 'Schedule not found' })
@@ -3557,6 +3621,7 @@ app.post('/api/agents/:agentId/triggers', requireAuth, toolLimiter, (request, re
 
   const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
+  if (!assertAgentOwnership(deployment, request)) { response.status(403).json({ error: 'You do not own this agent.' }); return }
 
   const id = `trig-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
   const trigger: db.EventTrigger = {
@@ -3580,6 +3645,10 @@ app.put('/api/agents/:agentId/triggers/:trigId', requireAuth, (request, response
   const parsed = triggerUpdateSchema.safeParse(request.body)
   if (!parsed.success) { response.status(400).json({ error: parsed.error.flatten() }); return }
 
+  const deployment = db.getDeployment(request.params.agentId)
+  if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
+  if (!assertAgentOwnership(deployment, request)) { response.status(403).json({ error: 'You do not own this agent.' }); return }
+
   const existing = db.getTrigger(request.params.trigId)
   if (!existing || existing.deploymentId !== request.params.agentId) {
     response.status(404).json({ error: 'Trigger not found' })
@@ -3592,6 +3661,10 @@ app.put('/api/agents/:agentId/triggers/:trigId', requireAuth, (request, response
 })
 
 app.delete('/api/agents/:agentId/triggers/:trigId', requireAuth, (request, response) => {
+  const deployment = db.getDeployment(request.params.agentId)
+  if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
+  if (!assertAgentOwnership(deployment, request)) { response.status(403).json({ error: 'You do not own this agent.' }); return }
+
   const existing = db.getTrigger(request.params.trigId)
   if (!existing || existing.deploymentId !== request.params.agentId) {
     response.status(404).json({ error: 'Trigger not found' })

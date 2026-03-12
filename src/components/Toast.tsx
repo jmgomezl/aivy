@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ToastContext } from '../lib/toastContext'
 import type { ToastType } from '../lib/toastContext'
@@ -14,6 +14,16 @@ let nextId = 0
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
+  const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+
+  // Cleanup all pending timers on unmount
+  useEffect(() => {
+    const timers = timersRef.current
+    return () => {
+      timers.forEach((t) => clearTimeout(t))
+      timers.clear()
+    }
+  }, [])
 
   const removeToast = useCallback((id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id))
@@ -25,7 +35,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       const next = [...prev, { id, message, type }]
       return next.slice(-3) // keep max 3
     })
-    setTimeout(() => removeToast(id), 4000)
+    const timer = setTimeout(() => {
+      timersRef.current.delete(timer)
+      removeToast(id)
+    }, 4000)
+    timersRef.current.add(timer)
   }, [removeToast])
 
   const icons: Record<ToastType, string> = {
