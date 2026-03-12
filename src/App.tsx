@@ -84,6 +84,7 @@ function App() {
     launchNote: string
     capabilityGroups: CapabilityGroupId[]
     walletType: 'platform' | 'dedicated'
+    initialFundingHbar?: number
   }) => {
     setIsDeploying(true)
     try {

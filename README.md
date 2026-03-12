@@ -221,7 +221,7 @@ Branch protection is enabled — all changes go through PRs.
 
 ## Team
 
-Built by **AivyLabs** for the Hedera APEX Hackathon 2025.
+Built by **AivyLabs** for the Hedera APEX Hackathon 2026.
 
 ## License
 

@@ -161,6 +161,7 @@ const deploymentSchema = z.object({
   launchNote: z.string().max(240).optional(),
   capabilityGroups: z.array(capabilityGroupSchema).min(1),
   walletType: z.enum(['platform', 'dedicated']).optional().default('platform'),
+  initialFundingHbar: z.number().min(1).max(1000).optional(),
 })
 
 const runAgentSchema = z.object({
@@ -1312,11 +1313,17 @@ const createAgentAccount = async (initialHbar = 1): Promise<{ accountId: string;
 /** Build a Hedera Client configured with a per-agent key pair. */
 const createAgentClient = (accountId: string, privateKey: string): Client => {
   const agentClient = config.network === 'mainnet' ? Client.forMainnet() : Client.forTestnet()
-  const key = privateKey.startsWith('0x')
-    ? PrivateKey.fromStringECDSA(privateKey)
-    : privateKey.startsWith('302e')
-      ? PrivateKey.fromStringECDSA(privateKey)
-      : PrivateKey.fromStringECDSA(privateKey)
+  let key: PrivateKey
+  try {
+    key = PrivateKey.fromStringECDSA(privateKey)
+  } catch (err) {
+    const hint = privateKey.includes(':')
+      ? ' The stored key appears to be encrypted — check that MASTER_ENCRYPTION_KEY in .env matches the key used when the agent was created.'
+      : ''
+    throw new Error(
+      `Failed to parse private key for agent account ${accountId}.${hint} (${err instanceof Error ? err.message : String(err)})`,
+    )
+  }
   agentClient.setOperator(accountId, key)
   return agentClient
 }
@@ -1789,16 +1796,16 @@ const fetchAllTopicMessages = async (topicId: string) => {
   return allMessages
 }
 
-const buildStats = () => {
-  const items = db.getAllDeployments()
+const buildStats = (items?: DeploymentRecord[]) => {
+  const deployments = items ?? db.getAllDeployments()
 
   return {
-    connectedAgents: items.length,
-    safeVaults: items.filter((item) => item.vaultProtected).length,
-    totalExecutions: items.reduce((sum, item) => sum + item.executions, 0),
-    pendingTransactions: items.filter((item) => item.status === 'deploying').length,
+    connectedAgents: deployments.length,
+    safeVaults: deployments.filter((item) => item.vaultProtected).length,
+    totalExecutions: deployments.reduce((sum, item) => sum + item.executions, 0),
+    pendingTransactions: deployments.filter((item) => item.status === 'deploying').length,
     hbarSecured: Number(
-      items
+      deployments
         .filter((item) => item.vaultProtected)
         .reduce((sum, item) => sum + item.vaultCapHbar, 0)
         .toFixed(1),
@@ -1834,7 +1841,7 @@ const buildLivePayload = async (userId?: string | null) => {
     network: demoMode ? 'testnet' : config.network,
     operatorAccountId: config.operatorAccountId || (demoMode ? demoAccountId : null),
     mirrorNodeUrl: config.mirrorNodeUrl,
-    stats: buildStats(),
+    stats: buildStats(deploymentItems),
     deployments: deploymentItems.map(safeDeployment),
     activity: [...recentActivity, ...mirrorTransactions, ...topicMessages.flat()]
       .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
@@ -1930,6 +1937,7 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
       launchNote,
       capabilityGroups: chosenGroups,
       walletType,
+      initialFundingHbar,
     } = parsed.data
     const capabilitySelection =
       chosenGroups.length > 0
@@ -1971,7 +1979,7 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
 
       // Create dedicated agent account if requested
       if (walletType === 'dedicated') {
-        const agentAccount = await createAgentAccount()
+        const agentAccount = await createAgentAccount(initialFundingHbar ?? 10)
         agentAccountId = agentAccount.accountId
         agentPrivateKey = agentAccount.privateKey
         console.log(`[Aivy] Created dedicated agent account: ${agentAccountId}`)

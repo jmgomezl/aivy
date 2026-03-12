@@ -67,6 +67,58 @@
   letter-spacing: 0.5px;
 }
 
+/* ─── Header Wallet Badge ─────────────────────── */
+.ap-header-wallet {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ap-header-wallet-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(97, 214, 191, 0.15);
+  background: rgba(97, 214, 191, 0.06);
+  color: #61d6bf;
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.ap-header-wallet-id:hover {
+  background: rgba(97, 214, 191, 0.12);
+  border-color: rgba(97, 214, 191, 0.3);
+}
+
+.ap-header-wallet-id svg {
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.ap-header-wallet-id:hover svg {
+  opacity: 1;
+}
+
+.ap-header-wallet-bal {
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  color: #f3c35f;
+  text-decoration: none;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.ap-header-wallet-bal:hover {
+  background: rgba(243, 195, 95, 0.1);
+  text-decoration: none;
+}
+
 .ap-close {
   padding: 6px;
   border: none;
@@ -212,6 +264,70 @@
   color: #f3c35f;
 }
 
+/* ─── Copy Button ─────────────────────────────── */
+.ap-wallet-id-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ap-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid rgba(97, 214, 191, 0.15);
+  background: rgba(97, 214, 191, 0.06);
+  color: #61d6bf;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.ap-copy-btn:hover {
+  background: rgba(97, 214, 191, 0.15);
+  border-color: rgba(97, 214, 191, 0.3);
+}
+
+/* ─── Fund Form ───────────────────────────────── */
+.ap-fund-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ap-fund-row {
+  display: flex;
+  gap: 6px;
+}
+
+.ap-fund-input {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: #eef5ff;
+  font-size: 13px;
+  font-family: 'VT323', monospace;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.ap-fund-input:focus {
+  border-color: rgba(97, 214, 191, 0.4);
+}
+
+.ap-fund-result {
+  font-size: 11px;
+  padding: 4px 0;
+}
+
+.ap-fund-result.success { color: #5ad6b5; }
+.ap-fund-result.error { color: #f25f5c; }
+
 .ap-fund-btn {
   display: flex;
   align-items: center;
@@ -233,6 +349,42 @@
 .ap-fund-btn:hover {
   background: rgba(97, 214, 191, 0.15);
   border-color: rgba(97, 214, 191, 0.4);
+}
+
+.ap-fund-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── Faucet Hint ─────────────────────────────── */
+.ap-faucet-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0 0;
+  border-top: 1px solid rgba(97, 214, 191, 0.1);
+  margin-top: 4px;
+}
+
+.ap-faucet-hint span {
+  font-size: 11px;
+  color: #5a6888;
+}
+
+.ap-faucet-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #5ad6b5;
+  text-decoration: none;
+  font-weight: 600;
+  transition: opacity 0.15s;
+}
+
+.ap-faucet-link:hover {
+  text-decoration: underline;
+  opacity: 0.85;
 }
 
 /* ─── Export Button ────────────────────────────── */

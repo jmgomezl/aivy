@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { LiveAgent, ToolCatalogResponse, ToolCatalogEntry, ToolWorkflow, ToolCatalogGroup, ActivityEvent, AgentSpendingResponse, WalletState } from '../types'
 import { statusMeta, toneClass } from '../data'
 import { requestJson } from '../utils'
@@ -62,6 +62,7 @@ export default function AgentPanel({
   const [fundResult, setFundResult] = useState<string | null>(null)
   const [spendingData, setSpendingData] = useState<AgentSpendingResponse | null>(null)
   const [spendingLoading, setSpendingLoading] = useState(false)
+  const [addressCopied, setAddressCopied] = useState(false)
   const { addToast } = useToast()
   const lastSeenEventRef = useRef<string | null>(null)
 
@@ -92,16 +93,22 @@ export default function AgentPanel({
     }
   }, [agent.id, activeTab])
 
+  // Fetch wallet balance on mount (always-on, not tab-gated) + refresh every 30s
   useEffect(() => {
-    if (activeTab !== 'info') return
-    setWalletLoading(true)
-    requestJson<{ walletType: string; agentAccountId: string | null; balance: number | null }>(
-      `/api/agents/${agent.id}/wallet`,
-    )
-      .then((res) => setWalletBalance(res.balance))
-      .catch(() => setWalletBalance(null))
-      .finally(() => setWalletLoading(false))
-  }, [agent.id, activeTab])
+    if (!agent.agentAccountId) return
+    const fetchBalance = () => {
+      setWalletLoading(true)
+      requestJson<{ walletType: string; agentAccountId: string | null; balance: number | null }>(
+        `/api/agents/${agent.id}/wallet`,
+      )
+        .then((res) => setWalletBalance(res.balance))
+        .catch(() => setWalletBalance(null))
+        .finally(() => setWalletLoading(false))
+    }
+    fetchBalance()
+    const interval = setInterval(fetchBalance, 30_000)
+    return () => clearInterval(interval)
+  }, [agent.id, agent.agentAccountId])
 
   const otherAgents = useMemo(
     () => allAgents.filter(a => a.id !== agent.id && a.status !== 'paused'),
@@ -185,6 +192,18 @@ export default function AgentPanel({
     }
   }
 
+  const handleCopyAddress = useCallback(async () => {
+    if (!agent.agentAccountId) return
+    try {
+      await navigator.clipboard.writeText(agent.agentAccountId)
+      setAddressCopied(true)
+      addToast('Address copied!', 'success')
+      setTimeout(() => setAddressCopied(false), 1600)
+    } catch {
+      // clipboard access not available
+    }
+  }, [agent.agentAccountId, addToast])
+
   const workflows = useMemo(() => {
     if (!catalog) return []
     return catalog.workflowsByTemplate[agent.templateId] ?? []
@@ -219,6 +238,39 @@ export default function AgentPanel({
               >
                 {statusMeta[agent.status].label}
               </span>
+              {agent.agentAccountId && (
+                <div className="ap-header-wallet">
+                  <button
+                    className="ap-header-wallet-id"
+                    onClick={() => void handleCopyAddress()}
+                    title="Click to copy full address"
+                    type="button"
+                  >
+                    {addressCopied ? (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    ) : (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                      </svg>
+                    )}
+                    {agent.agentAccountId.length > 12
+                      ? `${agent.agentAccountId.slice(0, 7)}...${agent.agentAccountId.slice(-4)}`
+                      : agent.agentAccountId}
+                  </button>
+                  <a
+                    className="ap-header-wallet-bal"
+                    href={`https://hashscan.io/testnet/account/${agent.agentAccountId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="View on Hashscan"
+                  >
+                    {walletLoading ? '...' : walletBalance !== null ? `${walletBalance} ℏ` : '--'}
+                  </a>
+                </div>
+              )}
             </div>
           </div>
           <button className="ap-close" onClick={onClose} type="button">
@@ -340,14 +392,33 @@ export default function AgentPanel({
               </div>
               {agent.agentAccountId && (
                 <div className="ap-wallet-account">
-                  <a
-                    href={`https://hashscan.io/testnet/account/${agent.agentAccountId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="ap-wallet-id"
-                  >
-                    {agent.agentAccountId}
-                  </a>
+                  <div className="ap-wallet-id-row">
+                    <a
+                      href={`https://hashscan.io/testnet/account/${agent.agentAccountId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ap-wallet-id"
+                    >
+                      {agent.agentAccountId}
+                    </a>
+                    <button
+                      className="ap-copy-btn"
+                      onClick={() => void handleCopyAddress()}
+                      title="Copy address"
+                      type="button"
+                    >
+                      {addressCopied ? (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5ad6b5" strokeWidth="2.5">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      ) : (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                          <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                   <span className="ap-wallet-balance">
                     {walletLoading ? '...' : walletBalance !== null ? `${walletBalance} HBAR` : '--'}
                   </span>
@@ -387,6 +458,22 @@ export default function AgentPanel({
                       Connect wallet to fund
                     </button>
                   )}
+                </div>
+              )}
+              {agent.walletType === 'dedicated' && agent.agentAccountId && (
+                <div className="ap-faucet-hint">
+                  <span>Need testnet HBAR?</span>
+                  <a
+                    href="https://portal.hedera.com/faucet"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ap-faucet-link"
+                  >
+                    Get free HBAR
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" />
+                    </svg>
+                  </a>
                 </div>
               )}
             </div>

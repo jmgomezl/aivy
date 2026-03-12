@@ -197,7 +197,8 @@ function rowToDeployment(row: DeploymentRow): DeploymentRecord {
         ? decrypt(row.agent_private_key_encrypted)
         : row.agent_private_key_encrypted
     } catch {
-      privateKey = row.agent_private_key_encrypted
+      console.error(`[Aivy] Failed to decrypt agent private key for deployment ${row.id}. Check MASTER_ENCRYPTION_KEY.`)
+      privateKey = null
     }
   }
 
