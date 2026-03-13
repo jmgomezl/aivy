@@ -23,6 +23,9 @@ const POLL_INTERVAL_MS = 1_500
 
 let activeState: HashConnectState | null = null
 
+export const isHashConnectActive = (): boolean =>
+  !!activeState?.hashconnect.connectedAccountIds.length
+
 const createHashConnectState = async (): Promise<HashConnectState> => {
   if (!isWalletConnectConfigured) {
     throw new Error(

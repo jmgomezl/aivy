@@ -2015,7 +2015,7 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
         // The user will sign a HashPack transfer to fund the agent after deploy
         // Platform funding capped at 5 HBAR to prevent abuse
         const PLATFORM_FUNDING_CAP = 5
-        const creationBalance = fundingSource === 'wallet' ? 1 : Math.min(initialFundingHbar ?? PLATFORM_FUNDING_CAP, PLATFORM_FUNDING_CAP)
+        const creationBalance = fundingSource === 'wallet' ? 2 : Math.min(initialFundingHbar ?? PLATFORM_FUNDING_CAP, PLATFORM_FUNDING_CAP)
         const agentAccount = await createAgentAccount(creationBalance)
         agentAccountId = agentAccount.accountId
         agentPrivateKey = agentAccount.privateKey

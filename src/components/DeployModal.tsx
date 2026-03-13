@@ -8,6 +8,7 @@ type DeployModalProps = {
   templateId: string
   catalog: ToolCatalogResponse | null
   isDeploying: boolean
+  deployingStatus?: string
   existingNames: string[]
   existingAgents?: LiveAgent[]
   operatorAccountId?: string | null
@@ -36,6 +37,7 @@ export default function DeployModal({
   templateId,
   catalog,
   isDeploying,
+  deployingStatus,
   existingNames,
   existingAgents = [],
   operatorAccountId,
@@ -140,8 +142,8 @@ export default function DeployModal({
   }
 
   return (
-    <div className="deploy-overlay" onClick={onClose}>
-      <div className="deploy-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="deploy-overlay">
+      <div className="deploy-modal">
         {/* ─── Header ──────────────────────────── */}
         <div className="dm-header">
           <div className="dm-header-left">
@@ -260,46 +262,42 @@ export default function DeployModal({
               )}
 
               {/* ─── Amount input ─────── */}
-              <label className="dm-field">
-                <span>
-                  Initial Funding (HBAR)
-                  <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">{fundingSource === 'wallet' ? 'You will sign a transfer in HashPack to send this HBAR to the agent after deployment. You control the funds.' : `The platform provides up to ${PLATFORM_FUNDING_CAP} ℏ for testing. For larger amounts, use your own wallet.`}</span></span>
-                </span>
-                <input
-                  type="number"
-                  value={initialFundingHbar}
-                  onChange={(e) => {
-                    const max = fundingSource === 'platform' ? PLATFORM_FUNDING_CAP : 1000
-                    setInitialFundingHbar(Math.max(1, Math.min(max, Number(e.target.value) || 1)))
-                  }}
-                  min={1}
-                  max={fundingSource === 'platform' ? PLATFORM_FUNDING_CAP : 1000}
-                  step={1}
-                  placeholder="10"
-                />
-                <div className="dm-funding-meta">
-                  {fundingSource === 'wallet' ? (
-                    <>
-                      <small>You'll approve this transfer in HashPack after deploy</small>
-                      {isWalletConnected && userWalletBalance !== null && initialFundingHbar > userWalletBalance && (
-                        <span className="dm-bal-warn">Insufficient wallet balance ({userWalletBalance.toFixed(2)} ℏ available)</span>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <small>Platform funds up to {PLATFORM_FUNDING_CAP} ℏ for testing</small>
-                      {operatorBalance !== null && (
-                        <span className={`dm-operator-bal ${initialFundingHbar > operatorBalance ? 'low' : ''}`}>
-                          Operator balance: <strong>{operatorBalance.toFixed(2)} ℏ</strong>
-                          {initialFundingHbar > operatorBalance && (
-                            <span className="dm-bal-warn"> — insufficient funds</span>
-                          )}
-                        </span>
-                      )}
-                    </>
+              {fundingSource === 'wallet' ? (
+                <label className="dm-field">
+                  <span>
+                    Initial Funding (HBAR)
+                    <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">You will sign a transfer in HashPack to send this HBAR to the agent after deployment. You control the funds.</span></span>
+                  </span>
+                  <input
+                    type="number"
+                    value={initialFundingHbar}
+                    onChange={(e) => setInitialFundingHbar(Math.max(1, Math.min(1000, Number(e.target.value) || 1)))}
+                    min={1}
+                    max={1000}
+                    step={1}
+                    placeholder="10"
+                  />
+                  <div className="dm-funding-meta">
+                    <small>You'll approve this transfer in HashPack after deploy</small>
+                    {isWalletConnected && userWalletBalance !== null && initialFundingHbar > userWalletBalance && (
+                      <span className="dm-bal-warn">Insufficient wallet balance ({userWalletBalance.toFixed(2)} ℏ available)</span>
+                    )}
+                  </div>
+                </label>
+              ) : (
+                <div className="dm-field dm-platform-funding-info">
+                  <span>
+                    Initial Funding
+                    <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">The platform provides {PLATFORM_FUNDING_CAP} ℏ for testing. For larger amounts, use your own wallet.</span></span>
+                  </span>
+                  <div className="dm-platform-amount">{PLATFORM_FUNDING_CAP} ℏ <small>provided by platform</small></div>
+                  {operatorBalance !== null && (
+                    <span className={`dm-operator-bal ${PLATFORM_FUNDING_CAP > operatorBalance ? 'low' : ''}`}>
+                      Operator balance: <strong>{operatorBalance.toFixed(2)} ℏ</strong>
+                    </span>
                   )}
                 </div>
-              </label>
+              )}
             </div>
           )}
 
@@ -477,7 +475,7 @@ export default function DeployModal({
             disabled={isDeploying || capabilityGroups.length === 0 || isDuplicateName || !agentName.trim() || (walletType === 'dedicated' && fundingSource === 'wallet' && !isWalletConnected)}
             type="button"
           >
-            {isDeploying ? 'Deploying...' : fundingSource === 'wallet' && walletType === 'dedicated' ? 'Deploy & Fund via Wallet' : 'Deploy to Hedera'}
+            {isDeploying ? (deployingStatus || 'Deploying...') : fundingSource === 'wallet' && walletType === 'dedicated' ? 'Deploy & Fund via Wallet' : 'Deploy to Hedera'}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <path d="M5 12h14M12 5l7 7-7 7" />
             </svg>

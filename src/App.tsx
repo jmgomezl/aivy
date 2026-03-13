@@ -41,6 +41,7 @@ function App() {
   const [resultDrawer, setResultDrawer] = useState<ResultDrawerState | null>(null)
   const [isMutating, setIsMutating] = useState(false)
   const [isDeploying, setIsDeploying] = useState(false)
+  const [deployingStatus, setDeployingStatus] = useState('')
   const [deployError, setDeployError] = useState('')
   const [lastChatMessages, setLastChatMessages] = useState<Record<string, string>>({})
   const [activeAgentIds, setActiveAgentIds] = useState<Set<string>>(new Set())
@@ -89,6 +90,7 @@ function App() {
     coordinationPartners?: string[]
   }) => {
     setIsDeploying(true)
+    setDeployingStatus('Creating agent on Hedera...')
     try {
       const { coordinationPartners, fundingSource, ...deployPayload } = payload
       const result = await requestJson<DeployResponse>('/api/deploy', {
@@ -100,10 +102,19 @@ function App() {
       // If user chose wallet funding, sign the transfer via HashPack
       let walletFunded = false
       if (fundingSource === 'wallet' && payload.initialFundingHbar && result.deployment.agentAccountId) {
+        setDeployingStatus('⏳ Approve transfer in HashPack...')
         try {
-          const { fundAgentAccount } = await import('./lib/hederaWallet')
-          const { transactionId } = await fundAgentAccount(result.deployment.agentAccountId, payload.initialFundingHbar)
+          // Re-establish HashConnect session if needed
+          const hederaWallet = await import('./lib/hederaWallet')
+          if (!hederaWallet.isHashConnectActive()) {
+            setDeployingStatus('⏳ Reconnecting wallet...')
+            await hederaWallet.connectHederaWallet()
+          }
 
+          setDeployingStatus('⏳ Sign the transfer in HashPack to fund your agent...')
+          const { transactionId } = await hederaWallet.fundAgentAccount(result.deployment.agentAccountId, payload.initialFundingHbar)
+
+          setDeployingStatus('Recording funding...')
           // Record the funding on the server
           await requestJson(`/api/agents/${result.deployment.id}/fund`, {
             method: 'POST',
@@ -116,8 +127,10 @@ function App() {
           })
           walletFunded = true
         } catch (fundError) {
-          // Agent is created but funding failed — show warning
+          // Agent is created but funding failed — show clear warning
           console.warn('[Aivy] Wallet funding failed:', fundError)
+          const msg = fundError instanceof Error ? fundError.message : 'Unknown error'
+          alert(`Agent created but funding failed: ${msg}\n\nYou can fund it from the agent's Info tab.`)
         }
       }
 
@@ -157,6 +170,7 @@ function App() {
       setDeployError(error instanceof Error ? error.message : 'Deployment failed. Is the backend running?')
     } finally {
       setIsDeploying(false)
+      setDeployingStatus('')
     }
   }, [live, wallet])
 
@@ -418,6 +432,7 @@ function App() {
           templateId={deployTemplateId}
           catalog={toolCatalog.catalog}
           isDeploying={isDeploying}
+          deployingStatus={deployingStatus}
           existingNames={live.agents.map((a) => a.name)}
           existingAgents={live.agents}
           operatorAccountId={live.operatorAccountId}
