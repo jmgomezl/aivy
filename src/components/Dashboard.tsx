@@ -206,7 +206,7 @@ export default function Dashboard() {
         </div>
 
         {/* ─── HBAR Spending ──────────────────────── */}
-        {data.spending && data.spending.perAgent.some(a => a.txCount > 0) && (
+        {data.spending?.perAgent && data.spending.perAgent.some(a => a.txCount > 0) && (
           <div className="dash-section">
             <h3 className="dash-section-title">HBAR Spending</h3>
             <div className="dash-spending-total">
@@ -215,7 +215,8 @@ export default function Dashboard() {
             </div>
             <div className="dash-bars">
               {data.spending.perAgent.filter(a => a.txCount > 0).map(agent => {
-                const maxSpent = Math.max(...data.spending!.perAgent.map(a => a.totalSpent), 1)
+                const perAgent = data.spending?.perAgent ?? []
+                const maxSpent = Math.max(...perAgent.map(a => a.totalSpent), 1)
                 const pct = (agent.totalSpent / maxSpent) * 100
                 return (
                   <div className="dash-bar-row" key={agent.agentId}>

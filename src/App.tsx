@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Component, useCallback, useEffect, useState } from 'react'
+import type { ReactNode, ErrorInfo } from 'react'
 import { playDeploy, playSuccess, playError } from './lib/sounds'
 import './animations.css'
 import './App.css'
@@ -28,6 +29,54 @@ import OnboardingTour from './components/OnboardingTour'
 import DemoCoach from './components/DemoCoach'
 import Dashboard from './components/Dashboard'
 import { ToastProvider } from './components/Toast'
+
+// ─── Error Boundary ────────────────────────────
+class ErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[Aivy] Render crash:', error, info.componentStack)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', minHeight: '100vh', padding: '2rem',
+          background: '#0f172a', color: '#e2e8f0', fontFamily: 'Inter, system-ui, sans-serif',
+          textAlign: 'center',
+        }}>
+          <h1 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Something went wrong</h1>
+          <p style={{ color: '#94a3b8', marginBottom: '1.5rem', maxWidth: '420px' }}>
+            {this.state.error?.message || 'An unexpected error occurred.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            style={{
+              padding: '0.6rem 1.5rem', borderRadius: '8px', border: 'none',
+              background: '#6366f1', color: '#fff', cursor: 'pointer', fontSize: '0.95rem',
+            }}
+          >
+            Reload Aivy
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 function App() {
   // ─── View State ───────────────────────────────
@@ -483,4 +532,12 @@ function App() {
   )
 }
 
-export default App
+function AppWithBoundary() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  )
+}
+
+export default AppWithBoundary
