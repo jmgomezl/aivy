@@ -102,20 +102,12 @@ function App() {
       // If user chose wallet funding, sign the transfer via HashPack
       let walletFunded = false
       if (fundingSource === 'wallet' && payload.initialFundingHbar && result.deployment.agentAccountId) {
-        setDeployingStatus('⏳ Approve transfer in HashPack...')
+        setDeployingStatus('⏳ Sign the transfer in HashPack to fund your agent...')
         try {
-          // Re-establish HashConnect session if needed
-          const hederaWallet = await import('./lib/hederaWallet')
-          if (!hederaWallet.isHashConnectActive()) {
-            setDeployingStatus('⏳ Reconnecting wallet...')
-            await hederaWallet.connectHederaWallet()
-          }
-
-          setDeployingStatus('⏳ Sign the transfer in HashPack to fund your agent...')
-          const { transactionId } = await hederaWallet.fundAgentAccount(result.deployment.agentAccountId, payload.initialFundingHbar)
+          const { fundAgentAccount } = await import('./lib/hederaWallet')
+          const { transactionId } = await fundAgentAccount(result.deployment.agentAccountId, payload.initialFundingHbar)
 
           setDeployingStatus('Recording funding...')
-          // Record the funding on the server
           await requestJson(`/api/agents/${result.deployment.id}/fund`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -127,10 +119,13 @@ function App() {
           })
           walletFunded = true
         } catch (fundError) {
-          // Agent is created but funding failed — show clear warning
           console.warn('[Aivy] Wallet funding failed:', fundError)
           const msg = fundError instanceof Error ? fundError.message : 'Unknown error'
-          alert(`Agent created but funding failed: ${msg}\n\nYou can fund it from the agent's Info tab.`)
+          if (msg.includes('not connected') || msg.includes('No connected account')) {
+            alert('Wallet session expired. Your agent was created but not funded.\n\nReconnect your wallet, then fund it from the agent\'s Info tab.')
+          } else {
+            alert(`Agent created but funding failed: ${msg}\n\nYou can fund it from the agent's Info tab.`)
+          }
         }
       }
 
