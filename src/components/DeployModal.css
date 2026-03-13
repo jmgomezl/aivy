@@ -568,14 +568,41 @@
   color: #5a6888;
 }
 
+.dm-deploy-error-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
 .dm-deploy-error {
+  flex: 1;
   padding: 10px 14px;
   border-radius: 8px;
   background: rgba(242, 95, 92, 0.1);
   border: 1px solid rgba(242, 95, 92, 0.25);
   color: #f25f5c;
   font-size: 13px;
-  margin-bottom: 12px;
+  margin: 0;
+}
+
+.dm-retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(242, 95, 92, 0.35);
+  background: rgba(242, 95, 92, 0.12);
+  color: #f25f5c;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.dm-retry-btn:hover {
+  background: rgba(242, 95, 92, 0.22);
 }
 
 /* ─── Footer ───────────────────────────────────── */

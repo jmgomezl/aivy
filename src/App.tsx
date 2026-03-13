@@ -188,7 +188,7 @@ function App() {
               targetAgentId: partnerId,
               message: `Hello! I'm ${payload.name}, a newly deployed agent. I've been linked to coordinate with you.`,
             }),
-          }).catch(() => { /* non-critical */ })
+          }).catch((err) => console.warn('[Aivy] Coordination greeting failed:', err))
         }
       }
 

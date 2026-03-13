@@ -162,8 +162,10 @@ type ResultReference = {
 
 const capabilityGroupSchema = z.enum(capabilityGroupIds)
 
+const VALID_TEMPLATE_IDS = ['treasury-sentinel', 'yield-router', 'compliance-clerk', 'governance-relay'] as const
+
 const deploymentSchema = z.object({
-  templateId: z.string().min(1).max(80),
+  templateId: z.enum(VALID_TEMPLATE_IDS),
   name: z.string().min(2).max(80),
   room: z.string().min(1).max(120),
   guardrail: z.string().min(1).max(500),
@@ -1545,19 +1547,20 @@ function detectSpendingAmount(toolName: string, params: Record<string, unknown>)
 }
 
 const makeMirrorUrl = (type: ResultReference['type'], value: string) => {
+  const encoded = encodeURIComponent(value)
   switch (type) {
     case 'transaction':
-      return `${config.mirrorNodeUrl}/transactions?transaction.id=${encodeURIComponent(value)}`
+      return `${config.mirrorNodeUrl}/transactions?transaction.id=${encoded}`
     case 'topic':
-      return `${config.mirrorNodeUrl}/topics/${value}`
+      return `${config.mirrorNodeUrl}/topics/${encoded}`
     case 'contract':
-      return `${config.mirrorNodeUrl}/contracts/${value}`
+      return `${config.mirrorNodeUrl}/contracts/${encoded}`
     case 'token':
-      return `${config.mirrorNodeUrl}/tokens/${value}`
+      return `${config.mirrorNodeUrl}/tokens/${encoded}`
     case 'account':
-      return `${config.mirrorNodeUrl}/accounts/${value}`
+      return `${config.mirrorNodeUrl}/accounts/${encoded}`
     case 'address':
-      return `${config.mirrorNodeUrl}/contracts/${value}`
+      return `${config.mirrorNodeUrl}/contracts/${encoded}`
   }
 }
 
@@ -1757,7 +1760,7 @@ const fetchMirrorTransactions = async () => {
 const fetchTopicMessages = async (topicId: string) => {
   try {
     const response = await fetchWithTimeout(
-      `${config.mirrorNodeUrl}/topics/${topicId}/messages?limit=3&order=desc`,
+      `${config.mirrorNodeUrl}/topics/${encodeURIComponent(topicId)}/messages?limit=3&order=desc`,
     )
 
     if (!response.ok) {
@@ -1791,7 +1794,7 @@ const fetchAllTopicMessages = async (topicId: string) => {
   }> = []
 
   let url: string | null =
-    `${config.mirrorNodeUrl}/topics/${topicId}/messages?limit=100&order=asc`
+    `${config.mirrorNodeUrl}/topics/${encodeURIComponent(topicId)}/messages?limit=100&order=asc`
 
   try {
     while (url) {

@@ -10,6 +10,8 @@ export function initAuth(): void {
   const envSecret = process.env.JWT_SECRET
   if (envSecret && envSecret.length >= 32) {
     jwtSecret = envSecret
+  } else if (process.env.NODE_ENV === 'production') {
+    throw new Error('[Aivy] JWT_SECRET is required in production. Set a 32+ char secret in .env')
   } else {
     jwtSecret = crypto.randomBytes(48).toString('hex')
     console.warn('[Aivy] No JWT_SECRET set. Auto-generated one (sessions reset on restart).')
