@@ -58,6 +58,7 @@ export default function DeployModal({
   const [walletType, setWalletType] = useState<'platform' | 'dedicated'>('dedicated')
   const PLATFORM_FUNDING_CAP = 5
   const [initialFundingHbar, setInitialFundingHbar] = useState(10)
+  const [fundingInputRaw, setFundingInputRaw] = useState('10')
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [wizardValues, setWizardValues] = useState<Record<string, unknown>>(
     wizard ? deepClone(wizard.defaults) : {},
@@ -206,7 +207,7 @@ export default function DeployModal({
                 <div className="dm-funding-tabs">
                   <button
                     className={`dm-funding-tab ${fundingSource === 'wallet' ? 'is-active' : ''}`}
-                    onClick={() => { setFundingSource('wallet'); setInitialFundingHbar(10) }}
+                    onClick={() => { setFundingSource('wallet'); setInitialFundingHbar(10); setFundingInputRaw('10') }}
                     type="button"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -217,7 +218,7 @@ export default function DeployModal({
                   </button>
                   <button
                     className={`dm-funding-tab ${fundingSource === 'platform' ? 'is-active' : ''}`}
-                    onClick={() => { setFundingSource('platform'); setInitialFundingHbar(PLATFORM_FUNDING_CAP) }}
+                    onClick={() => { setFundingSource('platform'); setInitialFundingHbar(PLATFORM_FUNDING_CAP); setFundingInputRaw(String(PLATFORM_FUNDING_CAP)) }}
                     type="button"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -270,8 +271,20 @@ export default function DeployModal({
                   </span>
                   <input
                     type="number"
-                    value={initialFundingHbar}
-                    onChange={(e) => setInitialFundingHbar(Math.max(1, Math.min(1000, Number(e.target.value) || 1)))}
+                    value={fundingInputRaw}
+                    onChange={(e) => {
+                      setFundingInputRaw(e.target.value)
+                      const n = Number(e.target.value)
+                      if (e.target.value !== '' && !Number.isNaN(n)) {
+                        setInitialFundingHbar(Math.max(1, Math.min(1000, n)))
+                      }
+                    }}
+                    onBlur={() => {
+                      const n = Number(fundingInputRaw)
+                      const clamped = Number.isNaN(n) || fundingInputRaw === '' ? 10 : Math.max(1, Math.min(1000, n))
+                      setInitialFundingHbar(clamped)
+                      setFundingInputRaw(String(clamped))
+                    }}
                     min={1}
                     max={1000}
                     step={1}

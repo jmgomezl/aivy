@@ -246,6 +246,30 @@
   border-color: rgba(232, 119, 119, 0.3);
 }
 
+/* ─── Session Chip (JWT active, wallet disconnected) */
+.wallet-session-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: rgba(90, 214, 181, 0.06);
+  border: 1px solid rgba(90, 214, 181, 0.18);
+  font-size: 12px;
+  color: var(--color-accent);
+}
+
+.wallet-session-chip strong {
+  color: var(--color-accent);
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+}
+
+.wallet-connect-btn--small {
+  padding: 5px 8px;
+  min-width: 0;
+}
+
 /* ─── Mobile Responsive ───────────────────────── */
 @media (max-width: 768px) {
   .topbar-v2 {

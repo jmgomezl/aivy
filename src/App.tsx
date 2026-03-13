@@ -66,10 +66,10 @@ function App() {
   // ─── Hooks ────────────────────────────────────
   const live = useLiveData()
   const toolCatalog = useToolCatalog()
-  const { wallet, connectWallet, disconnectWallet } = useWallet()
+  const { wallet, connectWallet, disconnectWallet, sessionAccountId, logout } = useWallet()
 
-  // Derive user account ID from connected wallet
-  const userAccountId = wallet.status === 'connected' ? wallet.accountId : null
+  // Derive user account ID from connected wallet or persisted session
+  const userAccountId = wallet.status === 'connected' ? wallet.accountId : sessionAccountId
 
   // ─── Derived State ────────────────────────────
   const selectedAgent = live.agents.find((a) => a.id === selectedAgentId) ?? null
@@ -348,8 +348,10 @@ function App() {
         networkLabel={live.networkLabel}
         operatorAccountId={live.operatorAccountId}
         wallet={wallet}
+        sessionAccountId={sessionAccountId}
         onConnectWallet={connectWallet}
         onDisconnectWallet={disconnectWallet}
+        onLogout={logout}
         theme={theme}
         onToggleTheme={toggleTheme}
         activeView={view === 'dashboard' ? 'dashboard' : 'office'}

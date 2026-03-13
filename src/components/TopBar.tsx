@@ -6,8 +6,10 @@ type TopBarProps = {
   networkLabel: string
   operatorAccountId: string | null
   wallet: WalletState
+  sessionAccountId: string | null
   onConnectWallet: () => void
   onDisconnectWallet: () => void
+  onLogout: () => void
   theme: 'dark' | 'light'
   onToggleTheme: () => void
   activeView: 'office' | 'dashboard'
@@ -20,8 +22,10 @@ export default function TopBar({
   networkLabel,
   operatorAccountId,
   wallet,
+  sessionAccountId,
   onConnectWallet,
   onDisconnectWallet,
+  onLogout,
   theme,
   onToggleTheme,
   activeView,
@@ -99,15 +103,15 @@ export default function TopBar({
           )}
         </button>
 
-        {/* Show operator chip only when no user wallet is connected */}
-        {!isConnected && operatorAccountId && (
+        {/* Show operator chip only when no user is logged in */}
+        {!isConnected && !sessionAccountId && operatorAccountId && (
           <span className="operator-chip">
             <span className="chip-label">Operator</span>
             <strong>{operatorAccountId}</strong>
           </span>
         )}
 
-        {/* User wallet section */}
+        {/* User wallet section — 3 states: wallet connected, session active, or not logged in */}
         {isConnected ? (
           <div className="wallet-connected-row">
             <span className="wallet-account-chip">
@@ -120,6 +124,34 @@ export default function TopBar({
               type="button"
             >
               Disconnect
+            </button>
+          </div>
+        ) : sessionAccountId ? (
+          <div className="wallet-connected-row">
+            <span className="wallet-session-chip">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+              <strong>{sessionAccountId}</strong>
+            </span>
+            <button
+              className="wallet-connect-btn wallet-connect-btn--small"
+              onClick={onConnectWallet}
+              type="button"
+              title="Reconnect wallet for signing transactions"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <path d="M22 10H18a2 2 0 000 4h4" />
+              </svg>
+            </button>
+            <button
+              className="wallet-disconnect-btn"
+              onClick={onLogout}
+              type="button"
+            >
+              Log out
             </button>
           </div>
         ) : (

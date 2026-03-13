@@ -1935,8 +1935,8 @@ app.get('/api/live', readLimiter, async (request, response) => {
       configured: isConfigured,
       error: error instanceof Error ? error.message : 'Unknown live payload error.',
       stats: buildStats(),
-      deployments: db.getAllDeployments().map(safeDeployment),
-      activity: db.getActivity(14),
+      deployments: [],
+      activity: [],
     })
   }
 })
