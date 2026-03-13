@@ -123,7 +123,7 @@ export default function PixelOffice({
 
         {/* ─── Coordination Lines ──────────────────── */}
         {coordLinks.length > 0 && (
-          <svg className="coord-lines" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <svg className="coord-lines" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Agent coordination links">
             <defs>
               <marker id="coord-arrow" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
                 <path d="M0,0 L6,2 L0,4" fill="#5ad6b5" />

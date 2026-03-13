@@ -47,3 +47,11 @@ export const readLimiter = rateLimit({
   keyGenerator: (req: Request) => req.ip ?? 'unknown',
   message: { error: 'Read rate limit exceeded. Max 150 per minute.' },
 })
+
+export const authLimiter = rateLimit({
+  ...sharedOptions,
+  windowMs: 15 * 60 * 1000, // 15-minute window
+  max: 15, // 15 attempts per 15 minutes
+  keyGenerator: (req: Request) => req.ip ?? 'unknown',
+  message: { error: 'Too many auth attempts. Try again in 15 minutes.' },
+})

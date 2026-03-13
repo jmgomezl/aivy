@@ -218,6 +218,7 @@ export default function ChatPanel({ agent, userAccountId, onAgentReply, onRefres
           ref={inputRef}
           className="chat-input"
           placeholder={`Ask ${agent.name}... ${placeholderHints[agent.templateId] ?? ''}`}
+          aria-label={`Message ${agent.name}`}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -229,6 +230,7 @@ export default function ChatPanel({ agent, userAccountId, onAgentReply, onRefres
           onClick={() => void sendMessage()}
           disabled={!input.trim() || isLoading}
           type="button"
+          aria-label="Send message"
         >
           <svg
             width="18"

@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { LiveAgent } from '../types'
 import { statusMeta, speechBubbles } from '../data'
 import './AgentSprite.css'
@@ -16,6 +16,14 @@ export default function AgentSprite({ agent, isSelected, isActive, bobDelay, onC
   const [bubble, setBubble] = useState<string | null>(null)
   const [bubbleFading, setBubbleFading] = useState(false)
 
+  // Use refs for all timers to prevent leaks on rapid mount/unmount
+  const chatFadeRef = useRef(0)
+  const chatRemoveRef = useRef(0)
+  const bubbleFadeRef = useRef(0)
+  const bubbleRemoveRef = useRef(0)
+  const initialTimerRef = useRef(0)
+  const intervalRef = useRef(0)
+
   // Show real chat messages as speech bubbles when available
   useEffect(() => {
     if (!lastChatMessage) return
@@ -28,17 +36,19 @@ export default function AgentSprite({ agent, isSelected, isActive, bobDelay, onC
     setBubbleFading(false)
     setBubble(truncated)
 
-    let removeTimer = 0
-    const fadeTimer = window.setTimeout(() => {
+    window.clearTimeout(chatFadeRef.current)
+    window.clearTimeout(chatRemoveRef.current)
+
+    chatFadeRef.current = window.setTimeout(() => {
       setBubbleFading(true)
-      removeTimer = window.setTimeout(() => {
+      chatRemoveRef.current = window.setTimeout(() => {
         setBubble(null)
       }, 500)
     }, 5000)
 
     return () => {
-      window.clearTimeout(fadeTimer)
-      window.clearTimeout(removeTimer)
+      window.clearTimeout(chatFadeRef.current)
+      window.clearTimeout(chatRemoveRef.current)
     }
   }, [lastChatMessage])
 
@@ -50,22 +60,19 @@ export default function AgentSprite({ agent, isSelected, isActive, bobDelay, onC
     const messages = speechBubbles[agent.templateId] ?? speechBubbles['treasury-sentinel']
     let messageIndex = Math.floor(Math.random() * messages.length)
 
-    let activeFadeTimer = 0
-    let activeRemoveTimer = 0
-
     const showBubble = () => {
       // Clear any pending timers from a previous bubble
-      window.clearTimeout(activeFadeTimer)
-      window.clearTimeout(activeRemoveTimer)
+      window.clearTimeout(bubbleFadeRef.current)
+      window.clearTimeout(bubbleRemoveRef.current)
 
       setBubbleFading(false)
       setBubble(messages[messageIndex % messages.length])
       messageIndex++
 
       // Fade out after 3 seconds
-      activeFadeTimer = window.setTimeout(() => {
+      bubbleFadeRef.current = window.setTimeout(() => {
         setBubbleFading(true)
-        activeRemoveTimer = window.setTimeout(() => {
+        bubbleRemoveRef.current = window.setTimeout(() => {
           setBubble(null)
         }, 500)
       }, 3000)
@@ -73,20 +80,20 @@ export default function AgentSprite({ agent, isSelected, isActive, bobDelay, onC
 
     // First bubble after random delay (3-8s)
     const initialDelay = 3000 + Math.random() * 5000
-    const initialTimer = window.setTimeout(() => {
+    initialTimerRef.current = window.setTimeout(() => {
       showBubble()
     }, initialDelay)
 
-    // Recurring bubbles every 8-15s
-    const interval = window.setInterval(() => {
+    // Recurring bubbles every 10s (fixed interval avoids drift)
+    intervalRef.current = window.setInterval(() => {
       showBubble()
-    }, 8000 + Math.random() * 7000)
+    }, 10000)
 
     return () => {
-      window.clearTimeout(initialTimer)
-      window.clearInterval(interval)
-      window.clearTimeout(activeFadeTimer)
-      window.clearTimeout(activeRemoveTimer)
+      window.clearTimeout(initialTimerRef.current)
+      window.clearInterval(intervalRef.current)
+      window.clearTimeout(bubbleFadeRef.current)
+      window.clearTimeout(bubbleRemoveRef.current)
     }
   }, [agent.templateId, agent.status, lastChatMessage])
 
