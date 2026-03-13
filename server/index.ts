@@ -2105,10 +2105,14 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
   }
 })
 
-app.get('/api/agents/:agentId/wallet', readLimiter, async (request, response) => {
+app.get('/api/agents/:agentId/wallet', requireAuth, readLimiter, async (request, response) => {
   const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) {
     response.status(404).json({ error: 'Deployment not found.' })
+    return
+  }
+  if (!assertAgentOwnership(deployment, request)) {
+    response.status(403).json({ error: 'You do not own this agent.' })
     return
   }
 
@@ -2140,10 +2144,14 @@ app.get('/api/agents/:agentId/wallet', readLimiter, async (request, response) =>
   }
 })
 
-app.get('/api/agents/:agentId/spending', readLimiter, (request, response) => {
+app.get('/api/agents/:agentId/spending', requireAuth, readLimiter, (request, response) => {
   const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) {
     response.status(404).json({ error: 'Deployment not found.' })
+    return
+  }
+  if (!assertAgentOwnership(deployment, request)) {
+    response.status(403).json({ error: 'You do not own this agent.' })
     return
   }
 
@@ -2556,10 +2564,14 @@ app.delete('/api/agents/:agentId', requireAuth, (request, response) => {
 })
 
 // ─── Export Audit Report ──────────────────────────────
-app.get('/api/agents/:agentId/export-audit', readLimiter, async (request, response) => {
+app.get('/api/agents/:agentId/export-audit', requireAuth, readLimiter, async (request, response) => {
   const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) {
     response.status(404).json({ error: 'Deployment not found.' })
+    return
+  }
+  if (!assertAgentOwnership(deployment, request)) {
+    response.status(403).json({ error: 'You do not own this agent.' })
     return
   }
 
@@ -3241,6 +3253,10 @@ app.post('/api/agents/:agentId/coordinate', requireAuth, async (request, respons
     response.status(404).json({ error: 'Target agent not found.' })
     return
   }
+  if (!assertAgentOwnership(target, request)) {
+    response.status(403).json({ error: 'You do not own the target agent.' })
+    return
+  }
 
   if (target.status === 'paused') {
     response.status(403).json({ error: `${target.name} is paused.` })
@@ -3507,7 +3523,11 @@ const demoSeedAgents = [
   },
 ]
 
-app.post('/api/demo/seed', (_request, response) => {
+app.post('/api/demo/seed', requireAuth, (_request, response) => {
+  if (!demoMode) {
+    response.status(403).json({ error: 'Demo seeding is only available in demo mode.' })
+    return
+  }
   // Clear existing deployments for a fresh demo
   db.clearAllDeployments()
   db.clearActivity()
@@ -3589,9 +3609,10 @@ const scheduleUpdateSchema = z.object({
   enabled: z.boolean().optional(),
 })
 
-app.get('/api/agents/:agentId/schedules', readLimiter, (request, response) => {
+app.get('/api/agents/:agentId/schedules', requireAuth, readLimiter, (request, response) => {
   const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
+  if (!assertAgentOwnership(deployment, request)) { response.status(403).json({ error: 'You do not own this agent.' }); return }
   const schedules = db.getSchedulesByAgent(deployment.id)
   response.json({ schedules })
 })
@@ -3681,7 +3702,10 @@ app.delete('/api/agents/:agentId/schedules/:schedId', requireAuth, (request, res
   response.json({ deleted: true })
 })
 
-app.get('/api/agents/:agentId/schedules/:schedId/executions', readLimiter, (request, response) => {
+app.get('/api/agents/:agentId/schedules/:schedId/executions', requireAuth, readLimiter, (request, response) => {
+  const deployment = db.getDeployment(request.params.agentId)
+  if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
+  if (!assertAgentOwnership(deployment, request)) { response.status(403).json({ error: 'You do not own this agent.' }); return }
   const existing = db.getSchedule(request.params.schedId)
   if (!existing || existing.deploymentId !== request.params.agentId) {
     response.status(404).json({ error: 'Schedule not found' })
@@ -3728,9 +3752,10 @@ const triggerUpdateSchema = z.object({
   enabled: z.boolean().optional(),
 })
 
-app.get('/api/agents/:agentId/triggers', readLimiter, (request, response) => {
+app.get('/api/agents/:agentId/triggers', requireAuth, readLimiter, (request, response) => {
   const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
+  if (!assertAgentOwnership(deployment, request)) { response.status(403).json({ error: 'You do not own this agent.' }); return }
   const triggers = db.getTriggersByAgent(deployment.id)
   response.json({ triggers })
 })
