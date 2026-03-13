@@ -12,6 +12,8 @@ export function initMasterKey(): void {
     if (masterKey.length !== 32) {
       throw new Error('MASTER_ENCRYPTION_KEY must be 64 hex characters (32 bytes).')
     }
+  } else if (process.env.NODE_ENV === 'production') {
+    throw new Error('[Aivy] MASTER_ENCRYPTION_KEY is required in production. Set a 64 hex char key in .env')
   } else {
     masterKey = crypto.randomBytes(32)
     const hexKey = masterKey.toString('hex')

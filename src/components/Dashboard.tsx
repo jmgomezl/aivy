@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { requestJson } from '../utils'
 import { templates } from '../data'
 import './Dashboard.css'
@@ -61,8 +61,8 @@ export default function Dashboard() {
     try {
       const d = await requestJson<DashboardData>('/api/dashboard')
       setData(d)
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.warn('[Dashboard] Failed to load data:', err)
     }
   }, [])
 
@@ -75,13 +75,18 @@ export default function Dashboard() {
   if (!data) {
     return (
       <div className="dashboard-loading">
+        <svg className="dash-spinner" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#5ad6b5" strokeWidth="2.5">
+          <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round">
+            <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite" />
+          </path>
+        </svg>
         <p>Loading dashboard...</p>
       </div>
     )
   }
 
   const { summary, agentStats, roomDistribution, recentCoordinations } = data
-  const maxExec = Math.max(...agentStats.map(a => a.executions), 1)
+  const maxExec = useMemo(() => Math.max(...agentStats.map(a => a.executions), 1), [agentStats])
 
   return (
     <div className="dashboard">

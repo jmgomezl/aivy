@@ -85,7 +85,7 @@ export default function DeployModal({
         const bal = data.balances?.[0]?.balance
         if (typeof bal === 'number') setOperatorBalance(bal / 1e8)
       })
-      .catch(() => setOperatorBalance(null))
+      .catch((err) => { console.warn('[Deploy] Operator balance fetch failed:', err); setOperatorBalance(null) })
   }, [operatorAccountId, mirrorNodeUrl])
 
   // Fetch user wallet balance from Mirror Node
@@ -99,7 +99,7 @@ export default function DeployModal({
         const bal = data.balances?.[0]?.balance
         if (typeof bal === 'number') setUserWalletBalance(bal / 1e8)
       })
-      .catch(() => setUserWalletBalance(null))
+      .catch((err) => { console.warn('[Deploy] Wallet balance fetch failed:', err); setUserWalletBalance(null) })
   }, [userAccountId, mirrorNodeUrl])
 
   const isDuplicateName = existingNames.some(
@@ -173,6 +173,7 @@ export default function DeployModal({
               onChange={(e) => setAgentName(e.target.value)}
               placeholder={template.name}
               className={isDuplicateName ? 'dm-input-error' : ''}
+              disabled={isDeploying}
             />
             {isDuplicateName && (
               <span className="dm-error-hint">An agent with this name already exists</span>
@@ -191,6 +192,7 @@ export default function DeployModal({
               className={walletType === 'dedicated' ? 'dm-toggle is-on' : 'dm-toggle'}
               onClick={() => setWalletType((v) => v === 'dedicated' ? 'platform' : 'dedicated')}
               type="button"
+              disabled={isDeploying}
             >
               {walletType === 'dedicated' ? 'ON' : 'OFF'}
             </button>
@@ -209,6 +211,7 @@ export default function DeployModal({
                     className={`dm-funding-tab ${fundingSource === 'wallet' ? 'is-active' : ''}`}
                     onClick={() => { setFundingSource('wallet'); setInitialFundingHbar(10); setFundingInputRaw('10') }}
                     type="button"
+                    disabled={isDeploying}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <rect x="2" y="4" width="20" height="16" rx="2" />
@@ -220,6 +223,7 @@ export default function DeployModal({
                     className={`dm-funding-tab ${fundingSource === 'platform' ? 'is-active' : ''}`}
                     onClick={() => { setFundingSource('platform'); setInitialFundingHbar(PLATFORM_FUNDING_CAP); setFundingInputRaw(String(PLATFORM_FUNDING_CAP)) }}
                     type="button"
+                    disabled={isDeploying}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
@@ -289,6 +293,7 @@ export default function DeployModal({
                     max={1000}
                     step={1}
                     placeholder="10"
+                    disabled={isDeploying}
                   />
                   <div className="dm-funding-meta">
                     <small>You'll approve this transfer in HashPack after deploy</small>
@@ -326,6 +331,7 @@ export default function DeployModal({
               className={vaultRequired ? 'dm-toggle is-on' : 'dm-toggle'}
               onClick={() => setVaultRequired((v) => !v)}
               type="button"
+              disabled={isDeploying}
             >
               {vaultRequired ? 'ON' : 'OFF'}
             </button>
@@ -476,7 +482,21 @@ export default function DeployModal({
 
         {/* ─── Footer ─────────────────────────── */}
         {deployError && (
-          <p className="dm-deploy-error">{deployError}</p>
+          <div className="dm-deploy-error-wrap">
+            <p className="dm-deploy-error">{deployError}</p>
+            <button
+              className="dm-retry-btn"
+              onClick={handleDeploy}
+              disabled={isDeploying}
+              type="button"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M1 4v6h6M23 20v-6h-6" />
+                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" />
+              </svg>
+              Retry
+            </button>
+          </div>
         )}
         <div className="dm-footer">
           <button className="dm-cancel" onClick={onClose} type="button">

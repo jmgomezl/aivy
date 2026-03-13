@@ -91,7 +91,7 @@ export default function AgentPanel({
       setSpendingLoading(true)
       requestJson<AgentSpendingResponse>(`/api/agents/${agent.id}/spending`)
         .then(setSpendingData)
-        .catch(() => setSpendingData(null))
+        .catch((err) => { console.warn('[AgentPanel] Spending fetch failed:', err); setSpendingData(null) })
         .finally(() => setSpendingLoading(false))
     }
   }, [agent.id, activeTab])
@@ -105,7 +105,7 @@ export default function AgentPanel({
         `/api/agents/${agent.id}/wallet`,
       )
         .then((res) => setWalletBalance(res.balance))
-        .catch(() => setWalletBalance(null))
+        .catch((err) => { console.warn('[AgentPanel] Wallet fetch failed:', err); setWalletBalance(null) })
         .finally(() => setWalletLoading(false))
     }
     fetchBalance()

@@ -70,7 +70,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS chat_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    deployment_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL REFERENCES deployments(id) ON DELETE CASCADE,
     role TEXT NOT NULL,
     content TEXT,
     tool_calls TEXT,
@@ -81,7 +81,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS spending_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    deployment_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL REFERENCES deployments(id) ON DELETE CASCADE,
     amount_hbar REAL NOT NULL,
     direction TEXT NOT NULL DEFAULT 'outflow',
     tool_name TEXT,
