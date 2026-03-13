@@ -1853,9 +1853,10 @@ const safeDeployment = (d: DeploymentRecord) => {
 
 const buildLivePayload = async (userId?: string | null) => {
   const allItems = db.getAllDeployments()
+  // Authenticated users see only their own agents; unauthenticated see empty office
   const deploymentItems = userId && userId !== 'demo' && userId !== 'anonymous'
-    ? allItems.filter((d) => d.userId === userId || d.userId === 'legacy' || d.userId === 'demo')
-    : allItems
+    ? allItems.filter((d) => d.userId === userId)
+    : []
   const topicMessages = await Promise.all(
     deploymentItems
       .filter((item) => item.topicId)
@@ -1934,8 +1935,8 @@ app.get('/api/live', readLimiter, async (request, response) => {
       configured: isConfigured,
       error: error instanceof Error ? error.message : 'Unknown live payload error.',
       stats: buildStats(),
-      deployments: db.getAllDeployments().map(safeDeployment),
-      activity: db.getActivity(14),
+      deployments: [],
+      activity: [],
     })
   }
 })

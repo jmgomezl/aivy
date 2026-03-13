@@ -25,28 +25,35 @@ const welcomeMessages: Record<string, string> = {
 const suggestedPrompts: Record<string, string[]> = {
   'treasury-sentinel': [
     'Check my HBAR balance',
-    'Show my account info',
+    'Show account info',
     'Transfer 5 HBAR to 0.0.5678',
-    'What is the current exchange rate?',
+    'Exchange rate?',
   ],
   'yield-router': [
-    'Create a token called HackCoin',
-    'Mint 500 tokens to my account',
-    'Deploy an ERC20 contract',
-    'Show my token balances',
+    'Create token HackCoin',
+    'Mint 500 tokens',
+    'Deploy ERC20 contract',
+    'Token balances',
   ],
   'compliance-clerk': [
-    'Audit my account details',
-    'Show my token balances',
-    'Check the exchange rate',
-    'Lookup a transaction record',
+    'Audit my account',
+    'Token balances',
+    'Check exchange rate',
+    'Lookup transaction',
   ],
   'governance-relay': [
-    'Create a proposal topic',
-    'Submit a message to my topic',
+    'Create proposal topic',
+    'Submit a message',
     'Show topic messages',
-    'Schedule a transfer',
+    'Schedule transfer',
   ],
+}
+
+const placeholderHints: Record<string, string> = {
+  'treasury-sentinel': 'Check balance, transfer HBAR...',
+  'yield-router': 'Create tokens, mint assets...',
+  'compliance-clerk': 'Audit accounts, verify tokens...',
+  'governance-relay': 'Create topics, submit proposals...',
 }
 
 export default function ChatPanel({ agent, userAccountId, onAgentReply, onRefresh, onMarkActive }: ChatPanelProps) {
@@ -210,11 +217,11 @@ export default function ChatPanel({ agent, userAccountId, onAgentReply, onRefres
         <textarea
           ref={inputRef}
           className="chat-input"
-          placeholder={`Ask ${agent.name}... e.g. "Create a token called HackCoin"`}
+          placeholder={`Ask ${agent.name}... ${placeholderHints[agent.templateId] ?? ''}`}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          rows={1}
+          rows={2}
           disabled={isLoading}
         />
         <button

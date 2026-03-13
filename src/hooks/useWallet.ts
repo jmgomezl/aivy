@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import type { WalletState } from '../types'
 import {
   connectHederaWallet,
   disconnectHederaWallet,
   isWalletConnectConfigured,
 } from '../lib/hederaWallet'
-import { setToken, clearToken } from '../lib/auth'
+import { setToken, clearToken, getSessionAccountId } from '../lib/auth'
 
 export { isWalletConnectConfigured }
 
@@ -79,5 +79,18 @@ export function useWallet() {
     }
   }
 
-  return { wallet, connectWallet, disconnectWallet }
+  /** Account ID from a persisted JWT session (survives page refresh) */
+  const sessionAccountId = useMemo(() => {
+    if (wallet.status === 'connected') return wallet.accountId
+    return getSessionAccountId()
+  }, [wallet])
+
+  /** Log out: clear JWT token without needing HashConnect */
+  const logout = () => {
+    clearToken()
+    setWallet({ status: 'idle' })
+    window.location.reload()
+  }
+
+  return { wallet, connectWallet, disconnectWallet, sessionAccountId, logout }
 }
