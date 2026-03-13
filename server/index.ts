@@ -2706,6 +2706,39 @@ app.post('/api/agents/:agentId/chat', requireAuth, chatLimiter, async (request, 
 // Shared chat loop (used by chat endpoint, schedules, triggers)
 // ═══════════════════════════════════════════════════
 
+/**
+ * Remove orphaned 'tool' messages whose parent 'assistant' (tool_calls) is missing.
+ * OpenAI requires every tool message to follow an assistant message with tool_calls.
+ */
+function sanitizeHistory(history: db.ChatMessage[]): db.ChatMessage[] {
+  const validToolCallIds = new Set<string>()
+  for (const msg of history) {
+    if (msg.role === 'assistant' && msg.tool_calls) {
+      for (const tc of msg.tool_calls) validToolCallIds.add(tc.id)
+    }
+  }
+  return history.filter((msg) => {
+    if (msg.role !== 'tool') return true
+    return msg.tool_call_id != null && validToolCallIds.has(msg.tool_call_id)
+  })
+}
+
+/**
+ * Safely trim chat history without breaking tool_calls / tool pairs.
+ * Keeps the system message + the last ~40 messages, but ensures we
+ * never start the trimmed history with orphaned 'tool' messages.
+ */
+function safeTrimHistory(history: db.ChatMessage[], maxLen = 42): db.ChatMessage[] {
+  if (history.length <= maxLen) return history
+  const system = history[0]
+  let trimmed = history.slice(-(maxLen - 2))
+  // Drop leading 'tool' messages that lost their parent 'assistant' (tool_calls) message
+  while (trimmed.length > 0 && trimmed[0].role === 'tool') {
+    trimmed = trimmed.slice(1)
+  }
+  return [system, ...trimmed]
+}
+
 type ChatLoopResult = {
   reply: string
   toolCalls: Array<{ toolName: string; params: Record<string, unknown>; result: { raw?: Record<string, unknown>; humanMessage?: string } }>
@@ -2720,6 +2753,9 @@ async function runChatLoop(
   source: 'chat' | 'schedule' | 'trigger' = 'chat',
 ): Promise<ChatLoopResult> {
   if (!openai) throw new Error('OpenAI is not configured.')
+
+  // Sanitize: drop orphaned 'tool' messages that lost their parent 'assistant' (tool_calls)
+  history = sanitizeHistory(history)
 
   let capExceeded = false
   const catalog = buildToolCatalog()
@@ -2834,11 +2870,8 @@ async function runChatLoop(
     }
   }
 
-  // Trim history
-  if (history.length > 42) {
-    const system = history[0]
-    history = [system, ...history.slice(-40)]
-  }
+  // Trim history (safe — never orphans tool messages)
+  history = safeTrimHistory(history)
   db.replaceChatHistory(deployment.id, history)
 
   const lastAssistant = [...history].reverse().find((m) => m.role === 'assistant' && m.content)
@@ -3123,10 +3156,7 @@ app.post('/api/chat/route', requireAuth, chatLimiter, async (request, response) 
       }
     }
 
-    if (history.length > 42) {
-      const system = history[0]
-      history = [system, ...history.slice(-40)]
-    }
+    history = safeTrimHistory(history)
     db.replaceChatHistory(deployment.id, history)
 
     const lastAssistant = [...history].reverse().find((m) => m.role === 'assistant' && m.content)
