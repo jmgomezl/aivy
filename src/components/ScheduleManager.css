@@ -255,6 +255,8 @@
 .sm-exec-completed .sm-exec-status { color: #5ad6b5; }
 .sm-exec-failed .sm-exec-status { color: #f87171; }
 .sm-exec-running .sm-exec-status { color: #f3c35f; }
+.sm-exec-cap_exceeded .sm-exec-status { color: #f3c35f; }
+.sm-exec-cap_exceeded { border-left: 2px solid rgba(243, 195, 95, 0.4); padding-left: 8px; }
 
 .sm-exec-time {
   font-size: 10px;

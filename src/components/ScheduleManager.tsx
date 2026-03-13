@@ -256,18 +256,21 @@ export default function ScheduleManager({ agentId }: Props) {
                 {(executions[s.id] ?? []).length === 0 ? (
                   <p className="sm-empty">No executions yet</p>
                 ) : (
-                  (executions[s.id] ?? []).map((exec) => (
-                    <div key={exec.id} className={`sm-exec sm-exec-${exec.status}`}>
-                      <span className="sm-exec-status">{exec.status}</span>
-                      <span className="sm-exec-time">{exec.startedAt ?? ''}</span>
-                      {exec.resultSummary && (
-                        <p className="sm-exec-summary">{exec.resultSummary.slice(0, 200)}</p>
-                      )}
-                      {exec.errorMessage && (
-                        <p className="sm-exec-error">{exec.errorMessage}</p>
-                      )}
-                    </div>
-                  ))
+                  (executions[s.id] ?? []).map((exec) => {
+                    const statusLabel = exec.status === 'cap_exceeded' ? 'CAP EXCEEDED' : exec.status
+                    return (
+                      <div key={exec.id} className={`sm-exec sm-exec-${exec.status}`}>
+                        <span className="sm-exec-status">{statusLabel}</span>
+                        <span className="sm-exec-time">{exec.startedAt ?? ''}</span>
+                        {exec.resultSummary && (
+                          <p className="sm-exec-summary">{exec.resultSummary}</p>
+                        )}
+                        {exec.errorMessage && (
+                          <p className="sm-exec-error">{exec.errorMessage}</p>
+                        )}
+                      </div>
+                    )
+                  })
                 )}
               </div>
             )}

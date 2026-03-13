@@ -2710,6 +2710,7 @@ type ChatLoopResult = {
   reply: string
   toolCalls: Array<{ toolName: string; params: Record<string, unknown>; result: { raw?: Record<string, unknown>; humanMessage?: string } }>
   references: ResultReference[]
+  capExceeded: boolean
 }
 
 async function runChatLoop(
@@ -2720,6 +2721,7 @@ async function runChatLoop(
 ): Promise<ChatLoopResult> {
   if (!openai) throw new Error('OpenAI is not configured.')
 
+  let capExceeded = false
   const catalog = buildToolCatalog()
   const enabledGroups = new Set(deployment.capabilityGroups)
   const agentTools = catalog.tools.filter((t) => enabledGroups.has(t.groupId))
@@ -2783,6 +2785,7 @@ async function runChatLoop(
             const summary = db.getSpendingSummary(deployment.id)
             const totalAfter = summary.totalSpent + projectedSpend
             if (totalAfter > deployment.vaultCapHbar) {
+              capExceeded = true
               toolResultContent = JSON.stringify({
                 error: `Spending cap exceeded. This transaction would spend ${projectedSpend} HBAR, bringing total to ${totalAfter.toFixed(2)} HBAR — above the ${deployment.vaultCapHbar} HBAR vault cap. Transaction blocked.`,
               })
@@ -2845,7 +2848,7 @@ async function runChatLoop(
     (ref, idx, all) => idx === all.findIndex((r) => r.label === ref.label && r.value === ref.value),
   )
 
-  return { reply, toolCalls: collectedToolCalls, references: uniqueRefs }
+  return { reply, toolCalls: collectedToolCalls, references: uniqueRefs, capExceeded }
 }
 
 /** Execute a scheduled or trigger-based prompt against an agent */
@@ -2887,12 +2890,28 @@ async function executeScheduledPrompt(
     const result = await runChatLoop(deployment, history, agentClient, source)
 
     if (execId > 0) {
-      db.updateScheduleExecution(execId, 'completed', result.reply.slice(0, 500), null)
+      const status = result.capExceeded ? 'cap_exceeded' as const : 'completed' as const
+      db.updateScheduleExecution(execId, status, result.reply.slice(0, 500), null)
+
+      // Auto-pause schedule after 3 consecutive cap-exceeded runs
+      if (result.capExceeded && source === 'schedule') {
+        const recent = db.getScheduleExecutions(sourceId, 3)
+        if (recent.length >= 3 && recent.every(e => e.status === 'cap_exceeded')) {
+          db.updateSchedule(sourceId, { enabled: false })
+          console.log(`[schedule] Auto-paused schedule ${sourceId} after 3 consecutive cap-exceeded runs`)
+          pushActivity(
+            `${deployment.name}: Schedule auto-paused — spending cap reached`,
+            'warning',
+          )
+        }
+      }
     }
 
     pushActivity(
-      `${deployment.name} (${source}): Completed automated task`,
-      'system',
+      result.capExceeded
+        ? `${deployment.name} (${source}): Spending cap blocked execution`
+        : `${deployment.name} (${source}): Completed automated task`,
+      result.capExceeded ? 'warning' : 'system',
     )
 
     return result.reply

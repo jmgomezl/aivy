@@ -272,7 +272,7 @@ export type ScheduleExecution = {
   id: number
   scheduleId: string
   deploymentId: string
-  status: 'pending' | 'running' | 'completed' | 'failed'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cap_exceeded'
   resultSummary: string | null
   errorMessage: string | null
   startedAt: string | null

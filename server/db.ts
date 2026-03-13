@@ -726,7 +726,7 @@ export function insertScheduleExecution(scheduleId: string, deploymentId: string
 
 export function updateScheduleExecution(
   id: number,
-  status: 'completed' | 'failed',
+  status: 'completed' | 'failed' | 'cap_exceeded',
   resultSummary: string | null,
   errorMessage: string | null,
 ): void {
