@@ -322,6 +322,56 @@
   background: rgba(90, 214, 181, 0.15);
 }
 
+/* ─── Inline Markdown Styles ─────────────────────── */
+.chat-content strong,
+.chat-tool-result strong {
+  color: #e2ecf8;
+  font-weight: 600;
+}
+
+.chat-content em,
+.chat-tool-result em {
+  font-style: italic;
+  opacity: 0.9;
+}
+
+.chat-md-code {
+  font-family: 'VT323', monospace;
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #5ad6b5;
+}
+
+.chat-md-list {
+  margin: 4px 0;
+  padding-left: 18px;
+  list-style: none;
+}
+
+.chat-md-list li {
+  position: relative;
+  margin: 2px 0;
+}
+
+.chat-md-list li::before {
+  content: '•';
+  position: absolute;
+  left: -14px;
+  color: #5ad6b5;
+  font-weight: bold;
+}
+
+.chat-tool-result p {
+  margin: 0;
+}
+
+.chat-tool-result p + p {
+  margin-top: 3px;
+}
+
 /* ─── Mobile Responsive ───────────────────────── */
 @media (max-width: 768px) {
   .chat-input {
