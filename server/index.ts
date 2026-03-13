@@ -1853,9 +1853,10 @@ const safeDeployment = (d: DeploymentRecord) => {
 
 const buildLivePayload = async (userId?: string | null) => {
   const allItems = db.getAllDeployments()
+  // Authenticated users see only their own agents; unauthenticated see empty office
   const deploymentItems = userId && userId !== 'demo' && userId !== 'anonymous'
-    ? allItems.filter((d) => d.userId === userId || d.userId === 'legacy' || d.userId === 'demo')
-    : allItems
+    ? allItems.filter((d) => d.userId === userId)
+    : []
   const topicMessages = await Promise.all(
     deploymentItems
       .filter((item) => item.topicId)
