@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import type { CapabilityGroupId, LiveAgent, ToolCatalogResponse } from '../types'
+import { useState, useMemo, useEffect } from 'react'
+import type { CapabilityGroupId, LiveAgent, ToolCatalogResponse, WalletState } from '../types'
 import { templates, launchWizardByTemplate, toneClass } from '../data'
 import { deepClone, buildLaunchPayload } from '../utils'
 import './DeployModal.css'
@@ -8,9 +8,14 @@ type DeployModalProps = {
   templateId: string
   catalog: ToolCatalogResponse | null
   isDeploying: boolean
+  deployingStatus?: string
   existingNames: string[]
   existingAgents?: LiveAgent[]
+  operatorAccountId?: string | null
+  mirrorNodeUrl?: string
   deployError?: string
+  wallet?: WalletState
+  onConnectWallet?: () => void
   onDeploy: (payload: {
     templateId: string
     name: string
@@ -22,6 +27,7 @@ type DeployModalProps = {
     capabilityGroups: CapabilityGroupId[]
     walletType: 'platform' | 'dedicated'
     initialFundingHbar?: number
+    fundingSource?: 'platform' | 'wallet'
     coordinationPartners?: string[]
   }) => void
   onClose: () => void
@@ -31,9 +37,14 @@ export default function DeployModal({
   templateId,
   catalog,
   isDeploying,
+  deployingStatus,
   existingNames,
   existingAgents = [],
+  operatorAccountId,
+  mirrorNodeUrl,
   deployError,
+  wallet,
+  onConnectWallet,
   onDeploy,
   onClose,
 }: DeployModalProps) {
@@ -45,6 +56,7 @@ export default function DeployModal({
   )
   const [vaultRequired, setVaultRequired] = useState(template.id !== 'governance-relay')
   const [walletType, setWalletType] = useState<'platform' | 'dedicated'>('dedicated')
+  const PLATFORM_FUNDING_CAP = 5
   const [initialFundingHbar, setInitialFundingHbar] = useState(10)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [wizardValues, setWizardValues] = useState<Record<string, unknown>>(
@@ -54,6 +66,40 @@ export default function DeployModal({
     catalog?.defaultCapabilityGroupsByTemplate[template.id] ?? [],
   )
   const [coordinationPartners, setCoordinationPartners] = useState<string[]>([])
+  const [fundingSource, setFundingSource] = useState<'wallet' | 'platform'>('wallet')
+  const [operatorBalance, setOperatorBalance] = useState<number | null>(null)
+  const [userWalletBalance, setUserWalletBalance] = useState<number | null>(null)
+
+  const isWalletConnected = wallet?.status === 'connected'
+  const userAccountId = isWalletConnected ? wallet.accountId : null
+
+  // Fetch operator balance from Mirror Node
+  useEffect(() => {
+    if (!operatorAccountId || !mirrorNodeUrl) return
+    const base = mirrorNodeUrl.replace(/\/api\/v1\/?$/, '')
+    const url = `${base}/api/v1/balances?account.id=${operatorAccountId}&limit=1`
+    fetch(url, { signal: AbortSignal.timeout(8_000) })
+      .then(r => r.json())
+      .then((data: { balances?: Array<{ balance: number }> }) => {
+        const bal = data.balances?.[0]?.balance
+        if (typeof bal === 'number') setOperatorBalance(bal / 1e8)
+      })
+      .catch(() => setOperatorBalance(null))
+  }, [operatorAccountId, mirrorNodeUrl])
+
+  // Fetch user wallet balance from Mirror Node
+  useEffect(() => {
+    if (!userAccountId || !mirrorNodeUrl) return
+    const base = mirrorNodeUrl.replace(/\/api\/v1\/?$/, '')
+    const url = `${base}/api/v1/balances?account.id=${userAccountId}&limit=1`
+    fetch(url, { signal: AbortSignal.timeout(8_000) })
+      .then(r => r.json())
+      .then((data: { balances?: Array<{ balance: number }> }) => {
+        const bal = data.balances?.[0]?.balance
+        if (typeof bal === 'number') setUserWalletBalance(bal / 1e8)
+      })
+      .catch(() => setUserWalletBalance(null))
+  }, [userAccountId, mirrorNodeUrl])
 
   const isDuplicateName = existingNames.some(
     (n) => n.toLowerCase() === agentName.trim().toLowerCase(),
@@ -78,6 +124,7 @@ export default function DeployModal({
       capabilityGroups,
       walletType,
       initialFundingHbar: walletType === 'dedicated' ? initialFundingHbar : undefined,
+      fundingSource: walletType === 'dedicated' ? fundingSource : undefined,
       coordinationPartners: coordinationPartners.length > 0 ? coordinationPartners : undefined,
     })
   }
@@ -95,8 +142,8 @@ export default function DeployModal({
   }
 
   return (
-    <div className="deploy-overlay" onClick={onClose}>
-      <div className="deploy-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="deploy-overlay">
+      <div className="deploy-modal">
         {/* ─── Header ──────────────────────────── */}
         <div className="dm-header">
           <div className="dm-header-left">
@@ -150,22 +197,107 @@ export default function DeployModal({
 
           {walletType === 'dedicated' && (
             <div className="dm-funding-field">
-              <label className="dm-field">
-                <span>
-                  Initial Funding (HBAR)
-                  <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">The platform operator sends this amount of HBAR to the agent's new dedicated account during deployment. This is the agent's starting balance for autonomous operations.</span></span>
+              {/* ─── Funding Source Selector ─────── */}
+              <div className="dm-funding-source">
+                <span className="dm-funding-source-label">
+                  Who funds this agent?
+                  <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">"My Wallet" signs a transfer from your connected HashPack wallet. "Platform" uses the platform operator's balance (capped at {PLATFORM_FUNDING_CAP} ℏ for testing).</span></span>
                 </span>
-                <input
-                  type="number"
-                  value={initialFundingHbar}
-                  onChange={(e) => setInitialFundingHbar(Math.max(1, Math.min(1000, Number(e.target.value) || 1)))}
-                  min={1}
-                  max={1000}
-                  step={1}
-                  placeholder="10"
-                />
-                <small>Platform sends this HBAR to the agent's new account</small>
-              </label>
+                <div className="dm-funding-tabs">
+                  <button
+                    className={`dm-funding-tab ${fundingSource === 'wallet' ? 'is-active' : ''}`}
+                    onClick={() => { setFundingSource('wallet'); setInitialFundingHbar(10) }}
+                    type="button"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="2" y="4" width="20" height="16" rx="2" />
+                      <path d="M22 10H18a2 2 0 000 4h4" />
+                    </svg>
+                    My Wallet
+                  </button>
+                  <button
+                    className={`dm-funding-tab ${fundingSource === 'platform' ? 'is-active' : ''}`}
+                    onClick={() => { setFundingSource('platform'); setInitialFundingHbar(PLATFORM_FUNDING_CAP) }}
+                    type="button"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+                      <path d="M16 7V5a4 4 0 00-8 0v2" />
+                    </svg>
+                    Platform
+                  </button>
+                </div>
+              </div>
+
+              {/* ─── Wallet connect prompt ─────── */}
+              {fundingSource === 'wallet' && !isWalletConnected && (
+                <div className="dm-wallet-connect">
+                  <p>Connect your HashPack wallet to fund this agent from your account</p>
+                  <button
+                    className="dm-wallet-connect-btn"
+                    onClick={() => onConnectWallet?.()}
+                    type="button"
+                    disabled={wallet?.status === 'connecting'}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="2" y="4" width="20" height="16" rx="2" />
+                      <path d="M22 10H18a2 2 0 000 4h4" />
+                    </svg>
+                    {wallet?.status === 'connecting' ? 'Connecting...' : 'Connect HashPack'}
+                  </button>
+                </div>
+              )}
+
+              {/* ─── Wallet connected badge ─────── */}
+              {fundingSource === 'wallet' && isWalletConnected && (
+                <div className="dm-wallet-connected">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5ad6b5" strokeWidth="2.5">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span className="dm-wallet-id">{wallet.accountId}</span>
+                  {userWalletBalance !== null && (
+                    <span className="dm-wallet-bal">{userWalletBalance.toFixed(2)} ℏ</span>
+                  )}
+                </div>
+              )}
+
+              {/* ─── Amount input / Platform display ─────── */}
+              {fundingSource === 'wallet' ? (
+                <label className="dm-field">
+                  <span>
+                    Initial Funding (HBAR)
+                    <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">You will sign a transfer in HashPack to send this HBAR to the agent after deployment.</span></span>
+                  </span>
+                  <input
+                    type="number"
+                    value={initialFundingHbar}
+                    onChange={(e) => setInitialFundingHbar(Math.max(1, Math.min(1000, Number(e.target.value) || 1)))}
+                    min={1}
+                    max={1000}
+                    step={1}
+                    placeholder="10"
+                  />
+                  <div className="dm-funding-meta">
+                    <small>You'll approve this transfer in HashPack after deploy</small>
+                    {isWalletConnected && userWalletBalance !== null && initialFundingHbar > userWalletBalance && (
+                      <span className="dm-bal-warn">Insufficient wallet balance ({userWalletBalance.toFixed(2)} ℏ available)</span>
+                    )}
+                  </div>
+                </label>
+              ) : (
+                <div className="dm-field dm-platform-funding-info">
+                  <span>
+                    Initial Funding
+                    <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">The platform provides {PLATFORM_FUNDING_CAP} ℏ for testing. For larger amounts, use your own wallet.</span></span>
+                  </span>
+                  <div className="dm-platform-amount">{PLATFORM_FUNDING_CAP} ℏ <small>provided by platform</small></div>
+                  {operatorBalance !== null && (
+                    <span className={`dm-operator-bal ${PLATFORM_FUNDING_CAP > operatorBalance ? 'low' : ''}`}>
+                      Operator balance: <strong>{operatorBalance.toFixed(2)} ℏ</strong>
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -340,10 +472,10 @@ export default function DeployModal({
           <button
             className="dm-deploy"
             onClick={handleDeploy}
-            disabled={isDeploying || capabilityGroups.length === 0 || isDuplicateName || !agentName.trim()}
+            disabled={isDeploying || capabilityGroups.length === 0 || isDuplicateName || !agentName.trim() || (walletType === 'dedicated' && fundingSource === 'wallet' && !isWalletConnected)}
             type="button"
           >
-            {isDeploying ? 'Deploying...' : 'Deploy to Hedera'}
+            {isDeploying ? (deployingStatus || 'Deploying...') : fundingSource === 'wallet' && walletType === 'dedicated' ? 'Deploy & Fund via Wallet' : 'Deploy to Hedera'}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <path d="M5 12h14M12 5l7 7-7 7" />
             </svg>

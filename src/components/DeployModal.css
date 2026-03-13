@@ -188,10 +188,191 @@
     transform: translateY(-8px);
   }
   100% {
-    max-height: 120px;
+    max-height: 500px;
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* ─── Funding Source Selector ────────────────── */
+.dm-funding-source {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dm-funding-source-label {
+  font-size: 12px;
+  color: #8390ad;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dm-funding-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.dm-funding-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #5a6888;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Space Grotesk', sans-serif;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.dm-funding-tab:hover {
+  color: #b8c6e4;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.dm-funding-tab.is-active {
+  background: rgba(90, 214, 181, 0.12);
+  color: #5ad6b5;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+/* ─── Wallet Connect Prompt ─────────────────── */
+.dm-wallet-connect {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px dashed rgba(90, 214, 181, 0.25);
+  background: rgba(90, 214, 181, 0.03);
+  text-align: center;
+}
+
+.dm-wallet-connect p {
+  font-size: 12px;
+  color: #8390ad;
+  line-height: 1.4;
+}
+
+.dm-wallet-connect-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(90, 214, 181, 0.35);
+  background: rgba(90, 214, 181, 0.1);
+  color: #5ad6b5;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Space Grotesk', sans-serif;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.dm-wallet-connect-btn:hover:not(:disabled) {
+  background: rgba(90, 214, 181, 0.18);
+  border-color: rgba(90, 214, 181, 0.5);
+}
+
+.dm-wallet-connect-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ─── Wallet Connected Badge ────────────────── */
+.dm-wallet-connected {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(90, 214, 181, 0.2);
+  background: rgba(90, 214, 181, 0.06);
+}
+
+.dm-wallet-id {
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+  color: #5ad6b5;
+}
+
+.dm-wallet-bal {
+  margin-left: auto;
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+  color: #f3c35f;
+  font-weight: 600;
+}
+
+.dm-funding-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dm-platform-funding-info {
+  gap: 6px;
+}
+
+.dm-platform-amount {
+  font-size: 22px;
+  font-weight: 700;
+  color: #5ad6b5;
+  letter-spacing: 0.02em;
+}
+
+.dm-platform-amount small {
+  font-size: 12px;
+  font-weight: 400;
+  color: rgba(200, 215, 240, 0.5);
+  margin-left: 6px;
+}
+
+.dm-operator-bal {
+  font-size: 12px;
+  color: #5ad6b5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dm-operator-bal strong {
+  font-weight: 700;
+  color: #5ad6b5;
+}
+
+.dm-operator-bal.low {
+  color: #f3c35f;
+}
+
+.dm-operator-bal.low strong {
+  color: #f3c35f;
+}
+
+.dm-funding-hint {
+  font-size: 11px;
+  color: rgba(200, 215, 240, 0.45);
+  margin-top: 2px;
+}
+
+.dm-bal-warn {
+  color: #f25f5c;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .dm-input-error {
