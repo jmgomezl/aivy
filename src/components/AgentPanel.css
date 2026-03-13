@@ -1,7 +1,7 @@
 .agent-panel-overlay {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 55;
   background: var(--overlay-dim);
 }
 
@@ -34,6 +34,8 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+  flex: 1;
 }
 
 .ap-portrait {
@@ -123,15 +125,17 @@
   padding: 6px;
   border: none;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  color: #8390ad;
+  background: rgba(255, 255, 255, 0.12);
+  color: #a0aec0;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+  margin-left: 8px;
 }
 
 .ap-close:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
 }
 
 /* ─── Tabs ────────────────────────────────────── */
