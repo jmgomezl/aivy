@@ -363,6 +363,12 @@
   color: #f3c35f;
 }
 
+.dm-funding-hint {
+  font-size: 11px;
+  color: rgba(200, 215, 240, 0.45);
+  margin-top: 2px;
+}
+
 .dm-bal-warn {
   color: #f25f5c;
   font-size: 11px;

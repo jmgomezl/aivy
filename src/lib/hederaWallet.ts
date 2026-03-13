@@ -249,17 +249,21 @@ export const fundAgentAccount = async (
     throw new Error('No connected account found. Reconnect your wallet.')
   }
 
-  const signer = hashconnect.getSigner(connectedId)
-
-  const tx = await new sdk.TransferTransaction()
-    .addHbarTransfer(signer.getAccountId(), new sdk.Hbar(-amountHbar))
+  // Build, freeze, and send via hashconnect.sendTransaction() which
+  // bypasses the broken signer (freezeWithSigner crashes with
+  // "e.startsWith is not a function" in getChainIdFromSession).
+  const fromAccount = sdk.AccountId.fromString(connectedId.toString())
+  const tx = new sdk.TransferTransaction()
+    .addHbarTransfer(fromAccount, new sdk.Hbar(-amountHbar))
     .addHbarTransfer(sdk.AccountId.fromString(agentAccountId), new sdk.Hbar(amountHbar))
-    .freezeWithSigner(signer)
+    .setTransactionId(sdk.TransactionId.generate(fromAccount))
+    .setNodeAccountIds([new sdk.AccountId(3)])
+    .freeze()
 
-  const signedTx = await tx.executeWithSigner(signer)
+  const receipt = await hashconnect.sendTransaction(fromAccount, tx)
 
   return {
-    transactionId: signedTx.transactionId?.toString() ?? 'unknown',
+    transactionId: receipt.transactionId?.toString() ?? 'unknown',
   }
 }
 

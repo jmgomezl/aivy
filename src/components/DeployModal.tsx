@@ -57,7 +57,7 @@ export default function DeployModal({
   const [vaultRequired, setVaultRequired] = useState(template.id !== 'governance-relay')
   const [walletType, setWalletType] = useState<'platform' | 'dedicated'>('dedicated')
   const PLATFORM_FUNDING_CAP = 5
-  const [initialFundingHbar, setInitialFundingHbar] = useState(PLATFORM_FUNDING_CAP)
+  const [initialFundingHbar, setInitialFundingHbar] = useState(10)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [wizardValues, setWizardValues] = useState<Record<string, unknown>>(
     wizard ? deepClone(wizard.defaults) : {},
@@ -201,7 +201,7 @@ export default function DeployModal({
               <div className="dm-funding-source">
                 <span className="dm-funding-source-label">
                   Who funds this agent?
-                  <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">Choose where the initial HBAR comes from. "My Wallet" signs a transfer from your connected HashPack wallet. "Platform" uses the platform operator's balance (for testing).</span></span>
+                  <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">"My Wallet" signs a transfer from your connected HashPack wallet. "Platform" uses the platform operator's balance (capped at {PLATFORM_FUNDING_CAP} ℏ for testing).</span></span>
                 </span>
                 <div className="dm-funding-tabs">
                   <button
@@ -261,12 +261,12 @@ export default function DeployModal({
                 </div>
               )}
 
-              {/* ─── Amount input ─────── */}
+              {/* ─── Amount input / Platform display ─────── */}
               {fundingSource === 'wallet' ? (
                 <label className="dm-field">
                   <span>
                     Initial Funding (HBAR)
-                    <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">You will sign a transfer in HashPack to send this HBAR to the agent after deployment. You control the funds.</span></span>
+                    <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">You will sign a transfer in HashPack to send this HBAR to the agent after deployment.</span></span>
                   </span>
                   <input
                     type="number"

@@ -121,8 +121,8 @@ function App() {
         } catch (fundError) {
           console.warn('[Aivy] Wallet funding failed:', fundError)
           const msg = fundError instanceof Error ? fundError.message : 'Unknown error'
-          if (msg.includes('not connected') || msg.includes('No connected account')) {
-            alert('Wallet session expired. Your agent was created but not funded.\n\nReconnect your wallet, then fund it from the agent\'s Info tab.')
+          if (msg.includes('not connected') || msg.includes('No connected account') || msg.includes('USER_REJECTED')) {
+            alert('Wallet funding cancelled. Your agent was created but not funded.\n\nYou can fund it from the agent\'s Info tab.')
           } else {
             alert(`Agent created but funding failed: ${msg}\n\nYou can fund it from the agent's Info tab.`)
           }
@@ -149,9 +149,9 @@ function App() {
 
       const fundingNote = fundingSource === 'wallet'
         ? walletFunded
-          ? ` Funded with ${payload.initialFundingHbar} HBAR from your wallet.`
-          : ' Agent created but wallet funding was cancelled — you can fund it from the Info tab.'
-        : ''
+          ? ` Funded with ${payload.initialFundingHbar} ℏ from your wallet.`
+          : ' Agent created — fund it from the Info tab.'
+        : ' Funded with 5 ℏ from the platform.'
 
       setResultDrawer({
         title: `${template?.name ?? 'Agent'} launched`,
