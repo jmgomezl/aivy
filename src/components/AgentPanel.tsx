@@ -60,6 +60,9 @@ export default function AgentPanel({
   const [fundAmount, setFundAmount] = useState('')
   const [fundingInProgress, setFundingInProgress] = useState(false)
   const [fundResult, setFundResult] = useState<string | null>(null)
+  const [withdrawAmount, setWithdrawAmount] = useState('')
+  const [withdrawInProgress, setWithdrawInProgress] = useState(false)
+  const [withdrawResult, setWithdrawResult] = useState<string | null>(null)
   const [spendingData, setSpendingData] = useState<AgentSpendingResponse | null>(null)
   const [spendingLoading, setSpendingLoading] = useState(false)
   const [addressCopied, setAddressCopied] = useState(false)
@@ -189,6 +192,34 @@ export default function AgentPanel({
       setFundResult(err instanceof Error ? err.message : 'Funding failed')
     } finally {
       setFundingInProgress(false)
+    }
+  }
+
+  const handleWithdraw = async () => {
+    const amount = parseFloat(withdrawAmount)
+    if (!amount || amount <= 0 || !agent.agentAccountId) return
+    if (wallet?.status !== 'connected') return
+    setWithdrawInProgress(true)
+    setWithdrawResult(null)
+    try {
+      const res = await requestJson<{ txId: string; amountHbar: number }>(
+        `/api/agents/${agent.id}/withdraw`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amountHbar: amount,
+            recipientAccountId: wallet.accountId,
+          }),
+        },
+      )
+      setWithdrawResult(`Withdrew ${res.amountHbar} HBAR to your wallet!`)
+      setWithdrawAmount('')
+      onRefresh?.()
+    } catch (err) {
+      setWithdrawResult(err instanceof Error ? err.message : 'Withdrawal failed')
+    } finally {
+      setWithdrawInProgress(false)
     }
   }
 
@@ -431,6 +462,7 @@ export default function AgentPanel({
                 <div className="ap-fund-form">
                   {wallet?.status === 'connected' ? (
                     <>
+                      {/* ─── Fund Row ─── */}
                       <div className="ap-fund-row">
                         <input
                           type="number"
@@ -451,6 +483,36 @@ export default function AgentPanel({
                         </button>
                       </div>
                       {fundResult && <span className={`ap-fund-result ${fundResult.includes('Funded') ? 'success' : 'error'}`}>{fundResult}</span>}
+
+                      {/* ─── Withdraw Row ─── */}
+                      <div className="ap-withdraw-row">
+                        <input
+                          type="number"
+                          className="ap-withdraw-input"
+                          placeholder="HBAR"
+                          value={withdrawAmount}
+                          onChange={(e) => setWithdrawAmount(e.target.value)}
+                          min="0.01"
+                          step="0.1"
+                        />
+                        <button
+                          className="ap-withdraw-btn"
+                          onClick={() => void handleWithdraw()}
+                          disabled={withdrawInProgress || !withdrawAmount || walletBalance === null || parseFloat(withdrawAmount) > (walletBalance ?? 0)}
+                          type="button"
+                          title="Withdraw HBAR from agent to your wallet"
+                        >
+                          {withdrawInProgress ? 'Withdrawing...' : (
+                            <>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <path d="M12 19V5M5 12l7-7 7 7" />
+                              </svg>
+                              Withdraw {withdrawAmount || '0'} ℏ
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      {withdrawResult && <span className={`ap-fund-result ${withdrawResult.includes('Withdrew') ? 'success' : 'error'}`}>{withdrawResult}</span>}
                     </>
                   ) : (
                     <button
@@ -458,7 +520,7 @@ export default function AgentPanel({
                       onClick={() => onConnectWallet?.()}
                       type="button"
                     >
-                      Connect wallet to fund
+                      Connect wallet to manage funds
                     </button>
                   )}
                 </div>

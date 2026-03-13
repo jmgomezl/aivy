@@ -384,6 +384,60 @@
   cursor: not-allowed;
 }
 
+/* ─── Withdraw Row ───────────────────────────── */
+.ap-withdraw-row {
+  display: flex;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  margin-top: 4px;
+}
+
+.ap-withdraw-input {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: #eef5ff;
+  font-size: 13px;
+  font-family: 'VT323', monospace;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.ap-withdraw-input:focus {
+  border-color: rgba(243, 195, 95, 0.4);
+}
+
+.ap-withdraw-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(243, 195, 95, 0.25);
+  background: rgba(243, 195, 95, 0.08);
+  color: #f3c35f;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: 'Space Grotesk', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.ap-withdraw-btn:hover:not(:disabled) {
+  background: rgba(243, 195, 95, 0.15);
+  border-color: rgba(243, 195, 95, 0.4);
+}
+
+.ap-withdraw-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ─── Faucet Hint ─────────────────────────────── */
 .ap-faucet-hint {
   display: flex;

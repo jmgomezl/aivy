@@ -26,6 +26,7 @@ import {
   ContractId,
   Hbar,
   PrivateKey,
+  TransferTransaction,
 } from '@hashgraph/sdk'
 import { z } from 'zod'
 import { initMasterKey } from './crypto.js'
@@ -172,6 +173,7 @@ const deploymentSchema = z.object({
   capabilityGroups: z.array(capabilityGroupSchema).min(1),
   walletType: z.enum(['platform', 'dedicated']).optional().default('platform'),
   initialFundingHbar: z.number().min(1).max(1000).optional(),
+  fundingSource: z.enum(['platform', 'wallet']).optional().default('platform'),
 })
 
 const runAgentSchema = z.object({
@@ -1967,6 +1969,7 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
       capabilityGroups: chosenGroups,
       walletType,
       initialFundingHbar,
+      fundingSource,
     } = parsed.data
     const capabilitySelection =
       chosenGroups.length > 0
@@ -2008,10 +2011,13 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
 
       // Create dedicated agent account if requested
       if (walletType === 'dedicated') {
-        const agentAccount = await createAgentAccount(initialFundingHbar ?? 10)
+        // When user funds via wallet, create account with minimal balance (just creation fee)
+        // The user will sign a HashPack transfer to fund the agent after deploy
+        const creationBalance = fundingSource === 'wallet' ? 1 : (initialFundingHbar ?? 10)
+        const agentAccount = await createAgentAccount(creationBalance)
         agentAccountId = agentAccount.accountId
         agentPrivateKey = agentAccount.privateKey
-        console.log(`[Aivy] Created dedicated agent account: ${agentAccountId}`)
+        console.log(`[Aivy] Created dedicated agent account: ${agentAccountId} (funding: ${fundingSource}, initial: ${creationBalance} HBAR)`)
       }
 
       const balanceResult = await executeTool(
@@ -2211,6 +2217,98 @@ app.post('/api/agents/:agentId/fund', requireAuth, toolLimiter, async (request, 
       funderAccountId: parsed.data.funderAccountId,
     },
   })
+})
+
+const withdrawSchema = z.object({
+  amountHbar: z.number().min(0.01).max(10000),
+  recipientAccountId: z.string().regex(/^0\.0\.\d+$/),
+})
+
+app.post('/api/agents/:agentId/withdraw', requireAuth, toolLimiter, async (request, response) => {
+  const parsed = withdrawSchema.safeParse(request.body)
+  if (!parsed.success) {
+    response.status(400).json({ error: flattenZodError(parsed.error) })
+    return
+  }
+
+  const deployment = db.getDeployment(request.params.agentId)
+  if (!deployment) {
+    response.status(404).json({ error: 'Deployment not found.' })
+    return
+  }
+  if (!assertAgentOwnership(deployment, request)) {
+    response.status(403).json({ error: 'You do not own this agent.' })
+    return
+  }
+  if (deployment.walletType !== 'dedicated' || !deployment.agentAccountId || !deployment.agentPrivateKey) {
+    response.status(400).json({ error: 'Agent does not have a dedicated wallet.' })
+    return
+  }
+
+  try {
+    if (demoMode) {
+      // Demo mode: fake withdrawal
+      db.recordSpending(
+        deployment.id,
+        parsed.data.amountHbar,
+        'outflow',
+        null,
+        'demo-withdraw-tx',
+        'withdraw',
+        `Withdrawn to ${parsed.data.recipientAccountId}`,
+      )
+      response.json({ txId: 'demo-withdraw-tx', amountHbar: parsed.data.amountHbar })
+      return
+    }
+
+    const agentClient = createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey)
+    const tx = await new TransferTransaction()
+      .addHbarTransfer(deployment.agentAccountId, new Hbar(-parsed.data.amountHbar))
+      .addHbarTransfer(parsed.data.recipientAccountId, new Hbar(parsed.data.amountHbar))
+      .setTransactionMemo(`Aivy withdraw: ${deployment.name}`)
+      .execute(agentClient)
+
+    const receipt = await tx.getReceipt(agentClient)
+    const txId = tx.transactionId?.toString() ?? 'unknown'
+
+    if (receipt.status.toString() !== 'SUCCESS') {
+      response.status(500).json({ error: `Transaction failed: ${receipt.status}` })
+      return
+    }
+
+    db.recordSpending(
+      deployment.id,
+      parsed.data.amountHbar,
+      'outflow',
+      null,
+      txId,
+      'withdraw',
+      `Withdrawn to ${parsed.data.recipientAccountId}`,
+    )
+
+    if (deployment.topicId) {
+      try {
+        await executeTool(coreConsensusPluginToolNames.SUBMIT_TOPIC_MESSAGE_TOOL, {
+          topicId: deployment.topicId,
+          message: `[Aivy Withdrawal] ${parsed.data.amountHbar} HBAR withdrawn from ${deployment.name} to ${parsed.data.recipientAccountId}. Tx: ${txId}`,
+          transactionMemo: 'Aivy agent withdrawal',
+        })
+      } catch {
+        // Non-critical
+      }
+    }
+
+    pushActivity(
+      `${parsed.data.amountHbar} HBAR withdrawn from ${deployment.name} to ${parsed.data.recipientAccountId}`,
+      'vault',
+    )
+
+    response.json({ txId, amountHbar: parsed.data.amountHbar })
+  } catch (error) {
+    response.status(500).json({
+      error: error instanceof Error ? error.message : 'Withdrawal failed.',
+    })
+  }
 })
 
 app.post('/api/agents/:agentId/run', requireAuth, toolLimiter, async (request, response) => {

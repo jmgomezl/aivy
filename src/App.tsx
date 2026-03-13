@@ -85,16 +85,41 @@ function App() {
     capabilityGroups: CapabilityGroupId[]
     walletType: 'platform' | 'dedicated'
     initialFundingHbar?: number
+    fundingSource?: 'platform' | 'wallet'
     coordinationPartners?: string[]
   }) => {
     setIsDeploying(true)
     try {
-      const { coordinationPartners, ...deployPayload } = payload
+      const { coordinationPartners, fundingSource, ...deployPayload } = payload
       const result = await requestJson<DeployResponse>('/api/deploy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(deployPayload),
+        body: JSON.stringify({ ...deployPayload, fundingSource }),
       })
+
+      // If user chose wallet funding, sign the transfer via HashPack
+      let walletFunded = false
+      if (fundingSource === 'wallet' && payload.initialFundingHbar && result.deployment.agentAccountId) {
+        try {
+          const { fundAgentAccount } = await import('./lib/hederaWallet')
+          const { transactionId } = await fundAgentAccount(result.deployment.agentAccountId, payload.initialFundingHbar)
+
+          // Record the funding on the server
+          await requestJson(`/api/agents/${result.deployment.id}/fund`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              amountHbar: payload.initialFundingHbar,
+              txId: transactionId,
+              funderAccountId: wallet.status === 'connected' ? wallet.accountId : 'unknown',
+            }),
+          })
+          walletFunded = true
+        } catch (fundError) {
+          // Agent is created but funding failed — show warning
+          console.warn('[Aivy] Wallet funding failed:', fundError)
+        }
+      }
 
       // Send coordination introductions to selected partners
       if (coordinationPartners?.length) {
@@ -113,9 +138,16 @@ function App() {
       const template = templates.find((t) => t.id === payload.templateId)
       setSelectedAgentId(result.deployment.id)
       setDeployModalOpen(false)
+
+      const fundingNote = fundingSource === 'wallet'
+        ? walletFunded
+          ? ` Funded with ${payload.initialFundingHbar} HBAR from your wallet.`
+          : ' Agent created but wallet funding was cancelled — you can fund it from the Info tab.'
+        : ''
+
       setResultDrawer({
         title: `${template?.name ?? 'Agent'} launched`,
-        message: `${payload.name} is live with ${payload.capabilityGroups.length} capability bundles.${coordinationPartners?.length ? ` Linked to ${coordinationPartners.length} partner${coordinationPartners.length > 1 ? 's' : ''}.` : ''} ${summarizeResultReferences(result.references)}`,
+        message: `${payload.name} is live with ${payload.capabilityGroups.length} capability bundles.${fundingNote}${coordinationPartners?.length ? ` Linked to ${coordinationPartners.length} partner${coordinationPartners.length > 1 ? 's' : ''}.` : ''} ${summarizeResultReferences(result.references)}`,
         references: result.references,
       })
       playDeploy()
@@ -126,7 +158,7 @@ function App() {
     } finally {
       setIsDeploying(false)
     }
-  }, [live])
+  }, [live, wallet])
 
   // ─── Agent Actions ────────────────────────────
   const runSelectedAgent = useCallback(async () => {
@@ -391,6 +423,8 @@ function App() {
           operatorAccountId={live.operatorAccountId}
           mirrorNodeUrl={live.mirrorNodeUrl}
           deployError={deployError}
+          wallet={wallet}
+          onConnectWallet={connectWallet}
           onDeploy={handleDeploy}
           onClose={() => setDeployModalOpen(false)}
         />
