@@ -108,6 +108,7 @@ export default function OmniChatBar({
           className="omni-bar-input"
           type="text"
           placeholder="Ask any agent... e.g. 'Create a token called HackCoin'"
+          aria-label="Ask any agent"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -119,6 +120,7 @@ export default function OmniChatBar({
           onClick={() => void handleSubmit()}
           disabled={!input.trim() || isRouting}
           type="button"
+          aria-label="Send message"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <path d="M5 12h14M12 5l7 7-7 7" />

@@ -33,7 +33,7 @@ import { initMasterKey } from './crypto.js'
 import * as db from './db.js'
 import { initAuth, generateChallenge, consumeChallenge, verifyAccountExists, issueToken } from './auth.js'
 import { authMiddleware, requireAuth, type AuthRequest } from './middleware.js'
-import { deployLimiter, chatLimiter, toolLimiter, readLimiter } from './rateLimiter.js'
+import { deployLimiter, chatLimiter, toolLimiter, readLimiter, authLimiter } from './rateLimiter.js'
 import { startSchedule, stopSchedule, stopAllSchedules, validateCron, acquireAgentLock, releaseAgentLock } from './scheduler.js'
 import { startPoller, stopPoller } from './eventPoller.js'
 
@@ -1891,7 +1891,7 @@ app.use(authMiddleware(demoMode))
 // ─── Auth Routes ────────────────────────────────────
 const authChallengeSchema = z.object({ accountId: z.string().regex(/^0\.0\.\d+$/) })
 
-app.post('/api/auth/challenge', (request, response) => {
+app.post('/api/auth/challenge', authLimiter, (request, response) => {
   const parsed = authChallengeSchema.safeParse(request.body)
   if (!parsed.success) {
     response.status(400).json({ error: 'Invalid account ID format.' })
@@ -1901,7 +1901,7 @@ app.post('/api/auth/challenge', (request, response) => {
   response.json(result)
 })
 
-app.post('/api/auth/verify', async (request, response) => {
+app.post('/api/auth/verify', authLimiter, async (request, response) => {
   const parsed = authChallengeSchema.safeParse(request.body)
   if (!parsed.success) {
     response.status(400).json({ error: 'Invalid account ID format.' })
@@ -2773,6 +2773,21 @@ async function runChatLoop(
       if (!agentToolNames.has(fnName)) {
         toolResultContent = JSON.stringify({ error: `Tool ${fnName} is not available for this agent.` })
       } else {
+        // Programmatic spending cap check BEFORE executing the tool
+        if (deployment.vaultProtected && deployment.vaultCapHbar > 0) {
+          const projectedSpend = detectSpendingAmount(fnName, fnArgs)
+          if (projectedSpend > 0) {
+            const summary = db.getSpendingSummary(deployment.id)
+            const totalAfter = summary.totalSpent + projectedSpend
+            if (totalAfter > deployment.vaultCapHbar) {
+              toolResultContent = JSON.stringify({
+                error: `Spending cap exceeded. This transaction would spend ${projectedSpend} HBAR, bringing total to ${totalAfter.toFixed(2)} HBAR — above the ${deployment.vaultCapHbar} HBAR vault cap. Transaction blocked.`,
+              })
+              history.push({ role: 'tool', content: toolResultContent, tool_call_id: toolCall.id, name: fnName })
+              continue
+            }
+          }
+        }
         try {
           const result = demoMode
             ? getDemoToolResponse(fnName, fnArgs)

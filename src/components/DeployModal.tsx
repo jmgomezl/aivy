@@ -183,7 +183,7 @@ export default function DeployModal({
             <div>
               <span>
                 Dedicated Wallet
-                <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">Creates a unique Hedera account for this agent with its own balance and key pair. The agent operates autonomously with its own on-chain identity instead of sharing the platform operator wallet.</span></span>
+                <span className="dm-tooltip-wrap" role="img" aria-label="Help">?<span className="dm-tooltip-body">Creates a unique Hedera account for this agent with its own balance and key pair. The agent operates autonomously with its own on-chain identity instead of sharing the platform operator wallet.</span></span>
               </span>
               <small>Own Hedera account with separate balance <strong style={{ color: '#5ad6b5' }}>(Recommended)</strong></small>
             </div>
@@ -202,7 +202,7 @@ export default function DeployModal({
               <div className="dm-funding-source">
                 <span className="dm-funding-source-label">
                   Who funds this agent?
-                  <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">"My Wallet" signs a transfer from your connected HashPack wallet. "Platform" uses the platform operator's balance (capped at {PLATFORM_FUNDING_CAP} ℏ for testing).</span></span>
+                  <span className="dm-tooltip-wrap" role="img" aria-label="Help">?<span className="dm-tooltip-body">"My Wallet" signs a transfer from your connected HashPack wallet. "Platform" uses the platform operator's balance (capped at {PLATFORM_FUNDING_CAP} ℏ for testing).</span></span>
                 </span>
                 <div className="dm-funding-tabs">
                   <button
@@ -267,7 +267,7 @@ export default function DeployModal({
                 <label className="dm-field">
                   <span>
                     Initial Funding (HBAR)
-                    <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">You will sign a transfer in HashPack to send this HBAR to the agent after deployment.</span></span>
+                    <span className="dm-tooltip-wrap" role="img" aria-label="Help">?<span className="dm-tooltip-body">You will sign a transfer in HashPack to send this HBAR to the agent after deployment.</span></span>
                   </span>
                   <input
                     type="number"
@@ -301,7 +301,7 @@ export default function DeployModal({
                 <div className="dm-field dm-platform-funding-info">
                   <span>
                     Initial Funding
-                    <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">The platform provides {PLATFORM_FUNDING_CAP} ℏ for testing. For larger amounts, use your own wallet.</span></span>
+                    <span className="dm-tooltip-wrap" role="img" aria-label="Help">?<span className="dm-tooltip-body">The platform provides {PLATFORM_FUNDING_CAP} ℏ for testing. For larger amounts, use your own wallet.</span></span>
                   </span>
                   <div className="dm-platform-amount">{PLATFORM_FUNDING_CAP} ℏ <small>provided by platform</small></div>
                   {operatorBalance !== null && (
@@ -318,7 +318,7 @@ export default function DeployModal({
             <div>
               <span>
                 Vault Safety
-                <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">Deploys a Solidity smart contract on Hedera that enforces an on-chain spending cap. The agent cannot exceed the HBAR limit you set, and all transactions are logged to HCS for a full audit trail.</span></span>
+                <span className="dm-tooltip-wrap" role="img" aria-label="Help">?<span className="dm-tooltip-body">Deploys a Solidity smart contract on Hedera that enforces an on-chain spending cap. The agent cannot exceed the HBAR limit you set, and all transactions are logged to HCS for a full audit trail.</span></span>
               </span>
               <small>On-chain spending cap and guardrails <strong style={{ color: '#5ad6b5' }}>(Recommended)</strong></small>
             </div>
@@ -344,7 +344,7 @@ export default function DeployModal({
                 <circle cx="5" cy="19" r="3" />
               </svg>
               Coordinate with existing agents
-              <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">Link this agent to existing agents for cross-agent coordination. Linked agents can send each other instructions and collaborate on tasks automatically.</span></span>
+              <span className="dm-tooltip-wrap" role="img" aria-label="Help">?<span className="dm-tooltip-body">Link this agent to existing agents for cross-agent coordination. Linked agents can send each other instructions and collaborate on tasks automatically.</span></span>
             </span>
             <div className="dm-coord-grid">
               {existingAgents.filter(a => a.status !== 'paused').map(a => {

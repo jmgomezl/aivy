@@ -4,6 +4,17 @@ import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { encrypt, decrypt, isEncrypted } from './crypto.js'
 
+/** Safely parse JSON from DB columns — returns fallback on corrupted data instead of crashing */
+function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    console.warn('[db] Failed to parse JSON column, using fallback:', value?.slice(0, 80))
+    return fallback
+  }
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = path.resolve(__dirname, '..', 'data')
 const DB_FILE = path.join(DATA_DIR, 'aivy.db')
@@ -210,7 +221,7 @@ function rowToDeployment(row: DeploymentRow): DeploymentRecord {
     room: row.room,
     guardrail: row.guardrail,
     vaultProtected: row.vault_protected === 1,
-    capabilityGroups: JSON.parse(row.capability_groups) as string[],
+    capabilityGroups: safeJsonParse<string[]>(row.capability_groups, []),
     status: row.status,
     lastAction: row.last_action,
     executions: row.executions,
@@ -422,7 +433,7 @@ export function getChatHistory(deploymentId: string): ChatMessage[] {
       role: row.role as ChatMessage['role'],
       content: row.content,
     }
-    if (row.tool_calls) msg.tool_calls = JSON.parse(row.tool_calls) as ChatMessage['tool_calls']
+    if (row.tool_calls) msg.tool_calls = safeJsonParse<ChatMessage['tool_calls']>(row.tool_calls, undefined)
     if (row.tool_call_id) msg.tool_call_id = row.tool_call_id
     if (row.tool_name) msg.name = row.tool_name
     return msg
@@ -756,7 +767,7 @@ function rowToTrigger(row: TriggerRow): EventTrigger {
     id: row.id,
     deploymentId: row.deployment_id,
     eventType: row.event_type as EventTrigger['eventType'],
-    config: JSON.parse(row.config) as Record<string, unknown>,
+    config: safeJsonParse<Record<string, unknown>>(row.config, {}),
     promptTemplate: row.prompt_template,
     enabled: row.enabled === 1,
     lastCheckedAt: row.last_checked_at,
