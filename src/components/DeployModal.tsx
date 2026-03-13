@@ -54,7 +54,8 @@ export default function DeployModal({
   )
   const [vaultRequired, setVaultRequired] = useState(template.id !== 'governance-relay')
   const [walletType, setWalletType] = useState<'platform' | 'dedicated'>('dedicated')
-  const [initialFundingHbar, setInitialFundingHbar] = useState(10)
+  const PLATFORM_FUNDING_CAP = 5
+  const [initialFundingHbar, setInitialFundingHbar] = useState(PLATFORM_FUNDING_CAP)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [wizardValues, setWizardValues] = useState<Record<string, unknown>>(
     wizard ? deepClone(wizard.defaults) : {},
@@ -203,7 +204,7 @@ export default function DeployModal({
                 <div className="dm-funding-tabs">
                   <button
                     className={`dm-funding-tab ${fundingSource === 'wallet' ? 'is-active' : ''}`}
-                    onClick={() => setFundingSource('wallet')}
+                    onClick={() => { setFundingSource('wallet'); setInitialFundingHbar(10) }}
                     type="button"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -214,7 +215,7 @@ export default function DeployModal({
                   </button>
                   <button
                     className={`dm-funding-tab ${fundingSource === 'platform' ? 'is-active' : ''}`}
-                    onClick={() => setFundingSource('platform')}
+                    onClick={() => { setFundingSource('platform'); setInitialFundingHbar(PLATFORM_FUNDING_CAP) }}
                     type="button"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -262,14 +263,17 @@ export default function DeployModal({
               <label className="dm-field">
                 <span>
                   Initial Funding (HBAR)
-                  <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">{fundingSource === 'wallet' ? 'You will sign a transfer in HashPack to send this HBAR to the agent after deployment. You control the funds.' : 'The platform operator sends this HBAR from its own balance.'}</span></span>
+                  <span className="dm-tooltip-wrap">?<span className="dm-tooltip-body">{fundingSource === 'wallet' ? 'You will sign a transfer in HashPack to send this HBAR to the agent after deployment. You control the funds.' : `The platform provides up to ${PLATFORM_FUNDING_CAP} ℏ for testing. For larger amounts, use your own wallet.`}</span></span>
                 </span>
                 <input
                   type="number"
                   value={initialFundingHbar}
-                  onChange={(e) => setInitialFundingHbar(Math.max(1, Math.min(1000, Number(e.target.value) || 1)))}
+                  onChange={(e) => {
+                    const max = fundingSource === 'platform' ? PLATFORM_FUNDING_CAP : 1000
+                    setInitialFundingHbar(Math.max(1, Math.min(max, Number(e.target.value) || 1)))
+                  }}
                   min={1}
-                  max={1000}
+                  max={fundingSource === 'platform' ? PLATFORM_FUNDING_CAP : 1000}
                   step={1}
                   placeholder="10"
                 />
@@ -283,7 +287,7 @@ export default function DeployModal({
                     </>
                   ) : (
                     <>
-                      <small>Platform sends this HBAR to the agent's new account</small>
+                      <small>Platform funds up to {PLATFORM_FUNDING_CAP} ℏ for testing</small>
                       {operatorBalance !== null && (
                         <span className={`dm-operator-bal ${initialFundingHbar > operatorBalance ? 'low' : ''}`}>
                           Operator balance: <strong>{operatorBalance.toFixed(2)} ℏ</strong>
