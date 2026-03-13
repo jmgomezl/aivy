@@ -63,7 +63,8 @@ export default function DeployModal({
   // Fetch operator balance from Mirror Node
   useEffect(() => {
     if (!operatorAccountId || !mirrorNodeUrl) return
-    const url = `${mirrorNodeUrl}/api/v1/balances?account.id=${operatorAccountId}&limit=1`
+    const base = mirrorNodeUrl.replace(/\/api\/v1\/?$/, '')
+    const url = `${base}/api/v1/balances?account.id=${operatorAccountId}&limit=1`
     fetch(url, { signal: AbortSignal.timeout(8_000) })
       .then(r => r.json())
       .then((data: { balances?: Array<{ balance: number }> }) => {
