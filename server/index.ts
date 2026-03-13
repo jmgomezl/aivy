@@ -2706,10 +2706,44 @@ app.post('/api/agents/:agentId/chat', requireAuth, chatLimiter, async (request, 
 // Shared chat loop (used by chat endpoint, schedules, triggers)
 // ═══════════════════════════════════════════════════
 
+/**
+ * Remove orphaned 'tool' messages whose parent 'assistant' (tool_calls) is missing.
+ * OpenAI requires every tool message to follow an assistant message with tool_calls.
+ */
+function sanitizeHistory(history: db.ChatMessage[]): db.ChatMessage[] {
+  const validToolCallIds = new Set<string>()
+  for (const msg of history) {
+    if (msg.role === 'assistant' && msg.tool_calls) {
+      for (const tc of msg.tool_calls) validToolCallIds.add(tc.id)
+    }
+  }
+  return history.filter((msg) => {
+    if (msg.role !== 'tool') return true
+    return msg.tool_call_id != null && validToolCallIds.has(msg.tool_call_id)
+  })
+}
+
+/**
+ * Safely trim chat history without breaking tool_calls / tool pairs.
+ * Keeps the system message + the last ~40 messages, but ensures we
+ * never start the trimmed history with orphaned 'tool' messages.
+ */
+function safeTrimHistory(history: db.ChatMessage[], maxLen = 42): db.ChatMessage[] {
+  if (history.length <= maxLen) return history
+  const system = history[0]
+  let trimmed = history.slice(-(maxLen - 2))
+  // Drop leading 'tool' messages that lost their parent 'assistant' (tool_calls) message
+  while (trimmed.length > 0 && trimmed[0].role === 'tool') {
+    trimmed = trimmed.slice(1)
+  }
+  return [system, ...trimmed]
+}
+
 type ChatLoopResult = {
   reply: string
   toolCalls: Array<{ toolName: string; params: Record<string, unknown>; result: { raw?: Record<string, unknown>; humanMessage?: string } }>
   references: ResultReference[]
+  capExceeded: boolean
 }
 
 async function runChatLoop(
@@ -2720,6 +2754,10 @@ async function runChatLoop(
 ): Promise<ChatLoopResult> {
   if (!openai) throw new Error('OpenAI is not configured.')
 
+  // Sanitize: drop orphaned 'tool' messages that lost their parent 'assistant' (tool_calls)
+  history = sanitizeHistory(history)
+
+  let capExceeded = false
   const catalog = buildToolCatalog()
   const enabledGroups = new Set(deployment.capabilityGroups)
   const agentTools = catalog.tools.filter((t) => enabledGroups.has(t.groupId))
@@ -2783,6 +2821,7 @@ async function runChatLoop(
             const summary = db.getSpendingSummary(deployment.id)
             const totalAfter = summary.totalSpent + projectedSpend
             if (totalAfter > deployment.vaultCapHbar) {
+              capExceeded = true
               toolResultContent = JSON.stringify({
                 error: `Spending cap exceeded. This transaction would spend ${projectedSpend} HBAR, bringing total to ${totalAfter.toFixed(2)} HBAR — above the ${deployment.vaultCapHbar} HBAR vault cap. Transaction blocked.`,
               })
@@ -2831,11 +2870,8 @@ async function runChatLoop(
     }
   }
 
-  // Trim history
-  if (history.length > 42) {
-    const system = history[0]
-    history = [system, ...history.slice(-40)]
-  }
+  // Trim history (safe — never orphans tool messages)
+  history = safeTrimHistory(history)
   db.replaceChatHistory(deployment.id, history)
 
   const lastAssistant = [...history].reverse().find((m) => m.role === 'assistant' && m.content)
@@ -2845,7 +2881,7 @@ async function runChatLoop(
     (ref, idx, all) => idx === all.findIndex((r) => r.label === ref.label && r.value === ref.value),
   )
 
-  return { reply, toolCalls: collectedToolCalls, references: uniqueRefs }
+  return { reply, toolCalls: collectedToolCalls, references: uniqueRefs, capExceeded }
 }
 
 /** Execute a scheduled or trigger-based prompt against an agent */
@@ -2887,12 +2923,28 @@ async function executeScheduledPrompt(
     const result = await runChatLoop(deployment, history, agentClient, source)
 
     if (execId > 0) {
-      db.updateScheduleExecution(execId, 'completed', result.reply.slice(0, 500), null)
+      const status = result.capExceeded ? 'cap_exceeded' as const : 'completed' as const
+      db.updateScheduleExecution(execId, status, result.reply.slice(0, 500), null)
+
+      // Auto-pause schedule after 3 consecutive cap-exceeded runs
+      if (result.capExceeded && source === 'schedule') {
+        const recent = db.getScheduleExecutions(sourceId, 3)
+        if (recent.length >= 3 && recent.every(e => e.status === 'cap_exceeded')) {
+          db.updateSchedule(sourceId, { enabled: false })
+          console.log(`[schedule] Auto-paused schedule ${sourceId} after 3 consecutive cap-exceeded runs`)
+          pushActivity(
+            `${deployment.name}: Schedule auto-paused — spending cap reached`,
+            'warning',
+          )
+        }
+      }
     }
 
     pushActivity(
-      `${deployment.name} (${source}): Completed automated task`,
-      'system',
+      result.capExceeded
+        ? `${deployment.name} (${source}): Spending cap blocked execution`
+        : `${deployment.name} (${source}): Completed automated task`,
+      result.capExceeded ? 'warning' : 'system',
     )
 
     return result.reply
@@ -3104,10 +3156,7 @@ app.post('/api/chat/route', requireAuth, chatLimiter, async (request, response) 
       }
     }
 
-    if (history.length > 42) {
-      const system = history[0]
-      history = [system, ...history.slice(-40)]
-    }
+    history = safeTrimHistory(history)
     db.replaceChatHistory(deployment.id, history)
 
     const lastAssistant = [...history].reverse().find((m) => m.role === 'assistant' && m.content)

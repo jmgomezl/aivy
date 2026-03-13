@@ -278,7 +278,7 @@ function ChatBubble({
           <span className="tool-name">{formatToolName(message.toolName ?? '')}</span>
           <span className="tool-status-ok">OK</span>
         </div>
-        <div className="chat-tool-result">{message.content}</div>
+        <div className="chat-tool-result">{renderMarkdown(message.content, `tool-${message.id}`)}</div>
         {(txId || accountId) && (
           <div className="chat-tool-refs">
             {txId && (
@@ -322,9 +322,7 @@ function ChatBubble({
         </div>
       )}
       <div className="chat-content">
-        {message.content.split('\n').map((line, i) => (
-          <p key={`${message.id}-l${i}`}>{line || '\u00A0'}</p>
-        ))}
+        {renderMarkdown(message.content, message.id)}
       </div>
     </div>
   )
@@ -336,4 +334,55 @@ function formatToolName(name: string): string {
     .replace(/_query$/, '')
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+/** Lightweight inline markdown → React nodes: **bold**, *italic*, `code` */
+function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = []
+  // Match **bold**, *italic*, `code`
+  const regex = /(\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`)/g
+  let last = 0
+  let idx = 0
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > last) nodes.push(text.slice(last, match.index))
+    if (match[2]) nodes.push(<strong key={`${keyPrefix}-${idx++}`}>{match[2]}</strong>)
+    else if (match[3]) nodes.push(<em key={`${keyPrefix}-${idx++}`}>{match[3]}</em>)
+    else if (match[4]) nodes.push(<code key={`${keyPrefix}-${idx++}`} className="chat-md-code">{match[4]}</code>)
+    last = match.index + match[0].length
+  }
+  if (last < text.length) nodes.push(text.slice(last))
+  return nodes.length > 0 ? nodes : [text]
+}
+
+/** Render a block of text with basic markdown: paragraphs, bold, italic, code, list items */
+function renderMarkdown(content: string, idPrefix: string): React.ReactNode {
+  const lines = content.split('\n')
+  const elements: React.ReactNode[] = []
+  let listItems: React.ReactNode[] = []
+
+  const flushList = () => {
+    if (listItems.length > 0) {
+      elements.push(<ul key={`${idPrefix}-ul${elements.length}`} className="chat-md-list">{listItems}</ul>)
+      listItems = []
+    }
+  }
+
+  lines.forEach((line, i) => {
+    const trimmed = line.trimStart()
+    if (trimmed.startsWith('- ') || trimmed.startsWith('• ')) {
+      const text = trimmed.slice(2)
+      listItems.push(<li key={`${idPrefix}-li${i}`}>{renderInline(text, `${idPrefix}-li${i}`)}</li>)
+    } else {
+      flushList()
+      elements.push(
+        <p key={`${idPrefix}-l${i}`}>
+          {line ? renderInline(line, `${idPrefix}-l${i}`) : '\u00A0'}
+        </p>,
+      )
+    }
+  })
+  flushList()
+
+  return <>{elements}</>
 }
