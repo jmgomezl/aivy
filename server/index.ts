@@ -338,8 +338,8 @@ function buildAgentSystemPrompt(deployment: DeploymentRecord, userAccountId?: st
         ].join('\n')
       : 'No spending cap enforced (vault not active).',
     '',
-    'Be concise but informative. Format amounts clearly (e.g., "142.5 HBAR").',
-    'When you return tool results, summarize them in a human-friendly way.',
+    'Be concise but informative. Use markdown formatting: **bold** for key values, `code` for IDs/addresses, and bullet lists with "- " for structured data.',
+    'Format amounts clearly (e.g., "**142.5 HBAR**"). When you return tool results, summarize them in a human-friendly way with proper formatting.',
     `For any tool that requires a topicId, use "${deployment.topicId ?? 'none yet'}" unless specified.`,
   ]
     .filter(Boolean)
@@ -2661,7 +2661,7 @@ app.post('/api/agents/:agentId/chat', requireAuth, chatLimiter, async (request, 
   // Demo fallback when OpenAI is not available
   if (!openai) {
     const responses = demoChatResponses[deployment.templateId] ?? [
-      `I'm ${deployment.name}, running in demo mode. I can help with on-chain operations when connected to the Hedera testnet.`,
+      `I'm **${deployment.name}**, running in demo mode. I can help with on-chain operations when connected to the Hedera testnet.`,
     ]
     const reply = responses[Math.floor(Math.random() * responses.length)]
     response.json({ reply, toolCalls: [], references: [] })
@@ -3471,92 +3471,127 @@ function nextDemoTokenId() {
 }
 
 const demoToolResponses: Record<string, (params: Record<string, unknown>) => ToolResponse> = {
-  get_hbar_balance_query_tool: (params) => ({
-    raw: { accountId: params['accountId'] ?? demoAccountId, hbarBalance: 142.5 },
-    humanMessage: `Balance: 142.5 HBAR for account ${params['accountId'] ?? demoAccountId}`,
-  }),
-  get_account_query_tool: (params) => ({
-    raw: {
-      accountId: params['accountId'] ?? demoAccountId,
-      hbarBalance: 142.5,
-      maxAutoTokenAssociations: 10,
-      isDeleted: false,
-      memo: 'Aivy demo account',
-    },
-    humanMessage: `Account info retrieved for ${params['accountId'] ?? demoAccountId}.`,
-  }),
-  transfer_hbar_tool: () => ({
-    raw: { transactionId: nextDemoTxId(), status: 'SUCCESS' },
-    humanMessage: 'HBAR transfer completed successfully.',
-  }),
+  get_hbar_balance_query_tool: (params) => {
+    const acct = params['accountId'] ?? demoAccountId
+    return {
+      raw: { accountId: acct, hbarBalance: 142.5 },
+      humanMessage: `**Balance** for \`${acct}\`: **142.5 HBAR** (~$9.26 USD)`,
+    }
+  },
+  get_account_query_tool: (params) => {
+    const acct = params['accountId'] ?? demoAccountId
+    return {
+      raw: {
+        accountId: acct,
+        hbarBalance: 142.5,
+        maxAutoTokenAssociations: 10,
+        isDeleted: false,
+        memo: 'Aivy demo account',
+        publicKey: '03e5d10263d9dedbd743de220f6aaa35c1a43c69a5dff03f5824285610dd478ad6',
+        evmAddress: '0x014a6d6a011006d2b7ab5efe3592015e4df29086',
+      },
+      humanMessage: [
+        `Account details for **${acct}**:`,
+        `- **Balance**: 142.5 HBAR`,
+        `- **Public Key**: \`03e5d10263...dd478ad6\``,
+        `- **EVM Address**: \`0x014a6d6a...f29086\``,
+        `- **Auto-Associations**: 10`,
+        `- **Status**: Active`,
+      ].join('\n'),
+    }
+  },
+  transfer_hbar_tool: (params) => {
+    const amount = params['amount'] ?? 10
+    const to = params['toAccountId'] ?? '0.0.5678'
+    return {
+      raw: { transactionId: nextDemoTxId(), status: 'SUCCESS' },
+      humanMessage: `**Transfer complete** — sent **${amount} HBAR** to \`${to}\``,
+    }
+  },
   create_topic_tool: () => {
     const topicId = nextDemoTopicId()
     return {
       raw: { topicId, transactionId: nextDemoTxId() },
-      humanMessage: `Topic ${topicId} created successfully.`,
+      humanMessage: `**Topic created**: \`${topicId}\`\n- Ready to receive consensus messages`,
     }
   },
   submit_topic_message_tool: () => ({
     raw: { transactionId: nextDemoTxId(), status: 'SUCCESS' },
-    humanMessage: 'Message submitted to topic.',
+    humanMessage: '**Message submitted** to topic successfully',
   }),
   create_fungible_token_tool: (params) => {
     const tokenId = nextDemoTokenId()
+    const name = params['tokenName'] ?? 'Aivy Token'
     return {
-      raw: { tokenId, transactionId: nextDemoTxId(), tokenName: params['tokenName'] },
-      humanMessage: `Token ${params['tokenName'] ?? 'Aivy Token'} created with ID ${tokenId}.`,
+      raw: { tokenId, transactionId: nextDemoTxId(), tokenName: name },
+      humanMessage: [
+        `**Token created**: *${name}*`,
+        `- **Token ID**: \`${tokenId}\``,
+        `- **Type**: Fungible`,
+        `- **Decimals**: 2`,
+      ].join('\n'),
     }
   },
   mint_fungible_token_tool: (params) => ({
     raw: { transactionId: nextDemoTxId(), totalSupply: params['amount'] ?? 1000 },
-    humanMessage: `Minted ${params['amount'] ?? 1000} tokens.`,
+    humanMessage: `**Minted** ${params['amount'] ?? 1000} tokens — new total supply updated`,
   }),
   create_non_fungible_token_tool: (params) => {
     const tokenId = nextDemoTokenId()
+    const name = params['tokenName'] ?? 'Aivy NFT'
     return {
       raw: { tokenId, transactionId: nextDemoTxId() },
-      humanMessage: `NFT collection ${params['tokenName'] ?? 'Aivy NFT'} created with ID ${tokenId}.`,
+      humanMessage: [
+        `**NFT collection created**: *${name}*`,
+        `- **Token ID**: \`${tokenId}\``,
+        `- **Type**: Non-Fungible`,
+      ].join('\n'),
     }
   },
   get_exchange_rate_tool: () => ({
     raw: { hbarToUsd: 0.065, centEquivalent: 6.5, expirationTime: new Date().toISOString() },
-    humanMessage: 'Exchange rate: 1 HBAR = $0.065 USD.',
+    humanMessage: '**Exchange Rate**\n- **1 HBAR** = $0.065 USD\n- **100 HBAR** = $6.50 USD',
   }),
   get_topic_info_query_tool: (params) => ({
     raw: { topicId: params['topicId'], sequenceNumber: 12, memo: 'Aivy audit stream' },
-    humanMessage: `Topic ${params['topicId']} has 12 messages.`,
+    humanMessage: `**Topic** \`${params['topicId']}\`\n- **Messages**: 12\n- **Memo**: Aivy audit stream`,
   }),
   get_token_info_query_tool: (params) => ({
     raw: { tokenId: params['tokenId'], name: 'Aivy Token', symbol: 'AIVY', totalSupply: 10000, decimals: 2 },
-    humanMessage: `Token ${params['tokenId']}: AIVY with 10,000 supply.`,
+    humanMessage: `**Token** \`${params['tokenId']}\`\n- **Name**: Aivy Token (*AIVY*)\n- **Supply**: 10,000\n- **Decimals**: 2`,
+  }),
+  scheduled_transaction_tool: (params) => ({
+    raw: { transactionId: nextDemoTxId(), status: 'SUCCESS', scheduleId: nextDemoAccountId() },
+    humanMessage: `**Scheduled transaction** created\n- **Amount**: ${params['amount'] ?? 1} HBAR\n- **Status**: Pending execution`,
   }),
 }
 
 function getDemoToolResponse(toolName: string, params: Record<string, unknown>): ToolResponse {
   const handler = demoToolResponses[toolName]
   if (handler) return handler(params)
+  const txId = nextDemoTxId()
   return {
-    raw: { status: 'SUCCESS', transactionId: nextDemoTxId() },
-    humanMessage: `${titleCase(toolName)} completed successfully (demo).`,
+    raw: { status: 'SUCCESS', transactionId: txId },
+    humanMessage: `**${titleCase(toolName)}** completed successfully`,
   }
 }
 
 const demoChatResponses: Record<string, string[]> = {
   'treasury-sentinel': [
-    'I checked the treasury balance — currently at 142.5 HBAR. Everything is within the spending cap. Would you like me to transfer funds or check a specific account?',
-    'The vault guardrails are active. I can monitor balances, execute transfers within the spending cap, or log actions to the audit trail. What would you like to do?',
+    'I checked the treasury — here\'s the current status:\n\n- **Balance**: 142.5 HBAR (~$9.26 USD)\n- **Vault Cap**: 250 HBAR\n- **Utilization**: 57%\n\nEverything is within the spending cap. Would you like me to transfer funds or check a specific account?',
+    'The **vault guardrails** are active and enforcing your spending cap. I can:\n\n- **Check balances** for any Hedera account\n- **Transfer HBAR** within your vault spending cap\n- **Audit transactions** via the consensus topic\n\nWhat would you like to do?',
   ],
   'yield-router': [
-    'I can create fungible or non-fungible tokens, manage ERC20/ERC721 contracts, and route liquidity on Hedera. What token operation would you like to perform?',
-    'Ready to route yield! I can mint tokens, manage airdrops, or deploy ERC contracts. Just let me know what you need.',
+    'I\'m ready to manage your token operations on Hedera. Here\'s what I can do:\n\n- **Create tokens** — fungible or NFT collections\n- **Mint & distribute** — manage token supply\n- **Deploy contracts** — ERC20/ERC721 via Hedera EVM\n\nWhat token operation would you like to perform?',
+    'Your token portfolio is looking good! I can:\n\n- **Mint tokens** into existing collections\n- **Create new tokens** with custom parameters\n- **Check token info** — supply, holders, metadata\n\nJust let me know what you need.',
   ],
   'compliance-clerk': [
-    'I\'ve been monitoring the audit trail — all transactions are within policy limits. I can inspect specific transactions, verify account activity, or pull the full audit log.',
-    'Compliance check: all agents are operating within their guardrails. Would you like me to audit a specific account or transaction?',
+    'I\'ve been monitoring the **audit trail** — here\'s the summary:\n\n- **Transactions audited**: 47\n- **Policy violations**: 0\n- **All agents**: Operating within guardrails\n\nI can inspect specific transactions, verify account activity, or pull the full audit log.',
+    '**Compliance check** complete:\n\n- All agents are operating within their **spending caps**\n- No unauthorized transactions detected\n- Consensus topic logs are intact\n\nWould you like me to audit a specific account or transaction?',
   ],
   'governance-relay': [
-    'I can coordinate governance proposals, manage HCS topics, and handle scheduled transactions. Would you like to create a proposal or review existing ones?',
-    'Governance systems are online. I can submit proposals to the consensus topic, coordinate votes, or schedule future transactions.',
+    'Governance systems are **online**. I can help with:\n\n- **Create proposals** — submit to the HCS consensus topic\n- **Schedule transactions** — set up future actions\n- **Coordinate agents** — trigger cross-agent workflows\n\nWould you like to create a proposal or review existing ones?',
+    'I manage the **governance layer** for your agent swarm:\n\n- **HCS Topics**: Active, receiving messages\n- **Scheduled Actions**: 3 pending\n- **Agent Coordination**: All links healthy\n\nWhat governance action would you like to take?',
   ],
 }
 
@@ -3588,13 +3623,18 @@ const demoSeedAgents = [
     vaultCapHbar: 0,
     capabilityGroups: ['accountQueries', 'consensusQueries', 'tokenQueries', 'contractQueries', 'transactionQueries', 'networkQueries'] as CapabilityGroupId[],
   },
+  {
+    templateId: 'governance-relay',
+    name: 'Gov Relay',
+    room: 'Forum Deck',
+    guardrail: 'Consensus and scheduling only',
+    vaultProtected: true,
+    vaultCapHbar: 100,
+    capabilityGroups: ['accounts', 'accountQueries', 'consensus', 'consensusQueries', 'transactionQueries', 'networkQueries'] as CapabilityGroupId[],
+  },
 ]
 
-app.post('/api/demo/seed', requireAuth, (_request, response) => {
-  if (!demoMode) {
-    response.status(403).json({ error: 'Demo seeding is only available in demo mode.' })
-    return
-  }
+app.post('/api/demo/seed', requireAuth, async (_request, response) => {
   // Clear existing deployments for a fresh demo
   db.clearAllDeployments()
   db.clearActivity()
@@ -3602,14 +3642,64 @@ app.post('/api/demo/seed', requireAuth, (_request, response) => {
   coordinationLog.length = 0
 
   const created: DeploymentRecord[] = []
+  const useRealHedera = isConfigured && client
 
   for (const seed of demoSeedAgents) {
-    const topicId = nextDemoTopicId()
-    const contractId = seed.vaultProtected ? nextDemoContractId() : null
-    const demoAgentAccountId = nextDemoAccountId()
+    let topicId = ''
+    let deploymentTxId = ''
+    let contractId: string | null = null
+    let contractAddress: string | null = null
+    let agentAccountId: string | null = null
+    let agentPrivateKey: string | null = null
+
+    if (useRealHedera) {
+      try {
+        // Create real agent account
+        const agentAccount = await createAgentAccount(2)
+        agentAccountId = agentAccount.accountId
+        agentPrivateKey = agentAccount.privateKey
+
+        // Create real topic
+        const topicResult = await executeTool(
+          coreConsensusPluginToolNames.CREATE_TOPIC_TOOL,
+          { topicMemo: `Aivy audit stream for ${seed.name}`, transactionMemo: `Aivy demo seed ${seed.templateId}` },
+        )
+        topicId = toEntityString(topicResult.raw?.topicId)
+        deploymentTxId = toEntityString(topicResult.raw?.transactionId)
+
+        // Deploy real vault contract if needed
+        if (seed.vaultProtected && seed.vaultCapHbar > 0) {
+          const vault = await deployVaultContract(seed.name, seed.guardrail, seed.vaultCapHbar)
+          contractId = vault.contractId
+          contractAddress = vault.contractAddress
+        }
+      } catch (err) {
+        console.warn(`[demo/seed] Failed to create real resources for ${seed.name}:`, err)
+        // Fallback to demo IDs
+        topicId = nextDemoTopicId()
+        deploymentTxId = nextDemoTxId()
+        agentAccountId = nextDemoAccountId()
+        agentPrivateKey = '302e_demo_agent_key_' + agentAccountId
+        if (seed.vaultProtected) {
+          contractId = nextDemoContractId()
+          contractAddress = `0x${Math.random().toString(16).slice(2, 42)}`
+        }
+      }
+    } else {
+      // Demo mode: fake IDs
+      topicId = nextDemoTopicId()
+      deploymentTxId = nextDemoTxId()
+      agentAccountId = nextDemoAccountId()
+      agentPrivateKey = '302e_demo_agent_key_' + agentAccountId
+      if (seed.vaultProtected) {
+        contractId = nextDemoContractId()
+        contractAddress = `0x${Math.random().toString(16).slice(2, 42)}`
+      }
+    }
+
     const deployment: DeploymentRecord = {
       id: `${seed.templateId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      userId: 'demo',
+      userId: (_request as AuthenticatedRequest).userId ?? 'demo',
       templateId: seed.templateId,
       name: seed.name,
       room: seed.room,
@@ -3617,16 +3707,16 @@ app.post('/api/demo/seed', requireAuth, (_request, response) => {
       vaultProtected: seed.vaultProtected,
       capabilityGroups: seed.capabilityGroups,
       status: seed.vaultProtected ? 'guarded' : 'active',
-      lastAction: 'Deployed in demo mode',
+      lastAction: 'Deployed via demo seed',
       executions: Math.floor(Math.random() * 8) + 1,
       createdAt: new Date().toISOString(),
       topicId,
       contractId,
-      contractAddress: contractId ? `0x${Math.random().toString(16).slice(2, 42)}` : null,
-      deploymentTxId: nextDemoTxId(),
+      contractAddress,
+      deploymentTxId,
       vaultCapHbar: seed.vaultCapHbar,
-      agentAccountId: demoAgentAccountId,
-      agentPrivateKey: '302e_demo_agent_key_' + demoAgentAccountId,
+      agentAccountId,
+      agentPrivateKey,
       walletType: 'dedicated',
     }
     db.insertDeployment(deployment)
@@ -3638,7 +3728,7 @@ app.post('/api/demo/seed', requireAuth, (_request, response) => {
     )
   }
 
-  // Add a coordination event for flavor
+  // Add coordination events for flavor
   const items = db.getAllDeployments()
   const treasury = items.find(d => d.templateId === 'treasury-sentinel')
   const yieldAgent = items.find(d => d.templateId === 'yield-router')
@@ -3651,6 +3741,21 @@ app.post('/api/demo/seed', requireAuth, (_request, response) => {
       targetAgentName: yieldAgent.name,
       trigger: 'low_balance',
       action: 'Rebalance funds',
+      timestamp: new Date().toISOString(),
+      status: 'completed',
+    })
+  }
+
+  const govAgent = items.find(d => d.templateId === 'governance-relay')
+  if (treasury && govAgent) {
+    coordinationLog.unshift({
+      id: `coord-demo2-${Date.now()}`,
+      sourceAgentId: govAgent.id,
+      sourceAgentName: govAgent.name,
+      targetAgentId: treasury.id,
+      targetAgentName: treasury.name,
+      trigger: 'scheduled_action',
+      action: 'Execute scheduled transfer',
       timestamp: new Date().toISOString(),
       status: 'completed',
     })
