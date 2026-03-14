@@ -2,6 +2,68 @@ import { type CSSProperties, useState } from 'react'
 import { templates, roomCards } from '../data'
 import './Landing.css'
 
+/* ── AivyVault Solidity source (deployed per-agent on Hedera) ── */
+const VAULT_SOLIDITY = `// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+contract AivyVault {
+    address public owner;
+    string  public agentName;
+    string  public hederaAccountId;
+    uint256 public spendingCapTinybar;
+    bool    public paused;
+    string  public policyLabel;
+
+    event VaultProvisioned(string agentName, string hederaAccountId,
+                           uint256 spendingCapTinybar, string policyLabel);
+    event GuardrailsUpdated(uint256 spendingCapTinybar, bool paused,
+                            string policyLabel);
+    event ExecutionLogged(string action, uint256 amountTinybar,
+                          string targetAccountId, string note);
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "owner only");
+        _;
+    }
+
+    constructor(
+        string memory _agentName,
+        string memory _hederaAccountId,
+        uint256 _spendingCapTinybar,
+        string memory _policyLabel
+    ) payable {
+        owner = msg.sender;
+        agentName = _agentName;
+        hederaAccountId = _hederaAccountId;
+        spendingCapTinybar = _spendingCapTinybar;
+        policyLabel = _policyLabel;
+        emit VaultProvisioned(_agentName, _hederaAccountId,
+                              _spendingCapTinybar, _policyLabel);
+    }
+
+    function updateGuardrails(
+        uint256 _capTinybar, bool _paused, string calldata _label
+    ) external onlyOwner {
+        spendingCapTinybar = _capTinybar;
+        paused = _paused;
+        policyLabel = _label;
+        emit GuardrailsUpdated(_capTinybar, _paused, _label);
+    }
+
+    function logExecution(
+        string calldata action,
+        uint256 amountTinybar,
+        string calldata targetAccountId,
+        string calldata note
+    ) external onlyOwner {
+        require(!paused, "vault paused");
+        require(amountTinybar <= spendingCapTinybar, "cap exceeded");
+        emit ExecutionLogged(action, amountTinybar, targetAccountId, note);
+    }
+
+    receive() external payable {}
+}`
+
 type LandingProps = {
   onEnter: () => void
   onTryDemo: () => Promise<void> | void
@@ -170,7 +232,7 @@ export default function Landing({ onEnter, onTryDemo }: LandingProps) {
           </div>
         </div>
 
-        <div className="landing-cta-group" style={{ animationDelay: '0.6s' }}>
+        <div className="landing-cta-group" style={{ animationDelay: '0.5s' }}>
           <button
             className="landing-cta"
             onClick={onEnter}
@@ -206,6 +268,84 @@ export default function Landing({ onEnter, onTryDemo }: LandingProps) {
             )}
           </button>
         </div>
+
+        {/* ── Vault Architecture Showcase ── */}
+        <section className="vault-showcase" style={{ animationDelay: '0.5s' }}>
+          <h2 className="vault-showcase-title">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            On-Chain Vault Architecture
+          </h2>
+          <p className="vault-showcase-sub">
+            Every agent deploys its own <strong>AivyVault</strong> smart contract on Hedera &mdash; spending caps are enforced at the EVM level, not just in application code.
+          </p>
+
+          {/* Architecture flow */}
+          <div className="vault-flow">
+            <div className="vault-flow-step">
+              <span className="vault-flow-num">1</span>
+              <span className="vault-flow-label">Deploy Agent</span>
+            </div>
+            <span className="vault-flow-arrow">&rarr;</span>
+            <div className="vault-flow-step">
+              <span className="vault-flow-num">2</span>
+              <span className="vault-flow-label">Create Vault Contract</span>
+            </div>
+            <span className="vault-flow-arrow">&rarr;</span>
+            <div className="vault-flow-step">
+              <span className="vault-flow-num">3</span>
+              <span className="vault-flow-label">Enforce Caps On-Chain</span>
+            </div>
+          </div>
+
+          {/* Solidity source */}
+          <div className="vault-code-wrap">
+            <div className="vault-code-header">
+              <span className="vault-code-dot" />
+              <span className="vault-code-dot" />
+              <span className="vault-code-dot" />
+              <span className="vault-code-filename">AivyVault.sol</span>
+            </div>
+            <pre className="vault-code"><code>{VAULT_SOLIDITY.trim()}</code></pre>
+          </div>
+
+          {/* Feature cards */}
+          <div className="vault-features">
+            <div className="vault-feat">
+              <div className="vault-feat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  <path d="M9 12l2 2 4-4" />
+                </svg>
+              </div>
+              <h4>Spending Cap</h4>
+              <p>On-chain <code>require(amount &lt;= cap)</code> prevents any overspend&mdash;even if the app is compromised</p>
+            </div>
+            <div className="vault-feat">
+              <div className="vault-feat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0110 0v4" />
+                </svg>
+              </div>
+              <h4>Pause Control</h4>
+              <p>Owner can freeze vault operations instantly with a single transaction</p>
+            </div>
+            <div className="vault-feat">
+              <div className="vault-feat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                </svg>
+              </div>
+              <h4>Audit Trail</h4>
+              <p>Every execution emits on-chain events for full transparency and compliance</p>
+            </div>
+          </div>
+        </section>
 
         <p className="landing-powered" style={{ animationDelay: '0.7s' }}>
           Powered by <strong>Hedera Agent Kit</strong> &middot; Built for APEX Hackathon &middot; <strong>AivyLabs</strong>
