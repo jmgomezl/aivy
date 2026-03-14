@@ -2015,11 +2015,13 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
 
       // Create dedicated agent account if requested
       if (walletType === 'dedicated') {
-        // Wallet funding: create with minimal balance (user signs HashPack transfer after)
-        // Platform funding: capped at 5 HBAR to prevent abuse
+        // Wallet funding: create with near-zero balance — the user signs a
+        // HashPack transfer for the full amount right after deployment.
+        // Platform funding: capped at 5 HBAR to prevent abuse.
         const PLATFORM_FUNDING_CAP = 5
+        const WALLET_SEED_HBAR = 0
         const creationBalance = fundingSource === 'wallet'
-          ? 2
+          ? WALLET_SEED_HBAR
           : Math.min(initialFundingHbar ?? PLATFORM_FUNDING_CAP, PLATFORM_FUNDING_CAP)
         const agentAccount = await createAgentAccount(creationBalance)
         agentAccountId = agentAccount.accountId
