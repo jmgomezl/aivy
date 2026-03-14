@@ -369,6 +369,15 @@ export function clearAllDeployments(): void {
   db.exec('DELETE FROM chat_messages')
 }
 
+export function clearDeploymentsByUser(userId: string): void {
+  const deploymentIds = db.prepare('SELECT id FROM deployments WHERE user_id = ?').all(userId) as Array<{ id: string }>
+  const stmtDelChat = db.prepare('DELETE FROM chat_messages WHERE deployment_id = ?')
+  for (const { id } of deploymentIds) {
+    stmtDelChat.run(id)
+  }
+  db.prepare('DELETE FROM deployments WHERE user_id = ?').run(userId)
+}
+
 // ─── Activity Log ────────────────────────────────────
 const stmtInsertActivity = db.prepare(
   'INSERT INTO activity_log (id, user_id, deployment_id, label, tone, timestamp) VALUES (?, ?, ?, ?, ?, ?)',
@@ -408,6 +417,10 @@ export function getActivityForAgent(agentName: string, limit = 50): Array<{ id: 
 
 export function clearActivity(): void {
   db.exec('DELETE FROM activity_log')
+}
+
+export function clearActivityByUser(userId: string): void {
+  db.prepare('DELETE FROM activity_log WHERE user_id = ?').run(userId)
 }
 
 // ─── Chat Messages ───────────────────────────────────
@@ -483,6 +496,14 @@ export function clearChatHistory(deploymentId: string): void {
 
 export function clearAllChatHistory(): void {
   db.exec('DELETE FROM chat_messages')
+}
+
+export function clearChatHistoryByUser(userId: string): void {
+  const deploymentIds = db.prepare('SELECT id FROM deployments WHERE user_id = ?').all(userId) as Array<{ id: string }>
+  const stmtDel = db.prepare('DELETE FROM chat_messages WHERE deployment_id = ?')
+  for (const { id } of deploymentIds) {
+    stmtDel.run(id)
+  }
 }
 
 // ─── Spending Records ────────────────────────────────

@@ -72,6 +72,12 @@ export default function Dashboard() {
     return () => window.clearInterval(interval)
   }, [refresh])
 
+  // useMemo must run on EVERY render (React 19 hook-count rule)
+  const maxExec = useMemo(
+    () => (data ? Math.max(...data.agentStats.map(a => a.executions), 1) : 1),
+    [data],
+  )
+
   if (!data) {
     return (
       <div className="dashboard-loading">
@@ -86,7 +92,6 @@ export default function Dashboard() {
   }
 
   const { summary, agentStats, roomDistribution, recentCoordinations } = data
-  const maxExec = useMemo(() => Math.max(...agentStats.map(a => a.executions), 1), [agentStats])
 
   return (
     <div className="dashboard">

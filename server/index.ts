@@ -2015,11 +2015,13 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
 
       // Create dedicated agent account if requested
       if (walletType === 'dedicated') {
-        // Wallet funding: create with minimal balance (user signs HashPack transfer after)
-        // Platform funding: capped at 5 HBAR to prevent abuse
+        // Wallet funding: create with near-zero balance — the user signs a
+        // HashPack transfer for the full amount right after deployment.
+        // Platform funding: capped at 5 HBAR to prevent abuse.
         const PLATFORM_FUNDING_CAP = 5
+        const WALLET_SEED_HBAR = 0
         const creationBalance = fundingSource === 'wallet'
-          ? 2
+          ? WALLET_SEED_HBAR
           : Math.min(initialFundingHbar ?? PLATFORM_FUNDING_CAP, PLATFORM_FUNDING_CAP)
         const agentAccount = await createAgentAccount(creationBalance)
         agentAccountId = agentAccount.accountId
@@ -3617,7 +3619,7 @@ const demoSeedAgents = [
   {
     templateId: 'compliance-clerk',
     name: 'Audit Bot',
-    room: 'Forum Deck',
+    room: 'War Room',
     guardrail: 'Read-only access, no mutations',
     vaultProtected: false,
     vaultCapHbar: 0,
@@ -3634,11 +3636,22 @@ const demoSeedAgents = [
   },
 ]
 
-app.post('/api/demo/seed', requireAuth, async (_request, response) => {
-  // Clear existing deployments for a fresh demo
-  db.clearAllDeployments()
-  db.clearActivity()
-  db.clearAllChatHistory()
+app.post('/api/demo/seed', async (_request, response) => {
+  // Auto-create a guest session if user is not authenticated
+  const authReq = _request as AuthenticatedRequest
+  let guestToken: string | null = null
+  if (!authReq.userId) {
+    const guestId = `demo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    authReq.userId = guestId
+    authReq.accountId = null
+    guestToken = issueToken(guestId, 'guest')
+  }
+
+  // Clear existing deployments for THIS user only (not all users)
+  const userId = authReq.userId!
+  db.clearChatHistoryByUser(userId)
+  db.clearDeploymentsByUser(userId)
+  db.clearActivityByUser(userId)
   coordinationLog.length = 0
 
   const created: DeploymentRecord[] = []
@@ -3761,7 +3774,11 @@ app.post('/api/demo/seed', requireAuth, async (_request, response) => {
     })
   }
 
-  response.status(201).json({ seeded: created.length, deployments: created.map(safeDeployment) })
+  response.status(201).json({
+    seeded: created.length,
+    deployments: created.map(safeDeployment),
+    ...(guestToken ? { token: guestToken } : {}),
+  })
 })
 
 // ═══════════════════════════════════════════════════

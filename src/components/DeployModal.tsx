@@ -67,6 +67,16 @@ export default function DeployModal({
     catalog?.defaultCapabilityGroupsByTemplate[template.id] ?? [],
   )
   const [coordinationPartners, setCoordinationPartners] = useState<string[]>([])
+  // Track raw string input for wizard number fields to prevent digit-loss on re-render
+  const [wizardRaw, setWizardRaw] = useState<Record<string, string>>(() => {
+    const raw: Record<string, string> = {}
+    if (wizard) {
+      for (const f of wizard.fields) {
+        if (f.input === 'number') raw[f.id] = String(wizard.defaults[f.id] ?? '')
+      }
+    }
+    return raw
+  })
   const [fundingSource, setFundingSource] = useState<'wallet' | 'platform'>('wallet')
   const [operatorBalance, setOperatorBalance] = useState<number | null>(null)
   const [userWalletBalance, setUserWalletBalance] = useState<number | null>(null)
@@ -209,7 +219,7 @@ export default function DeployModal({
                 <div className="dm-funding-tabs">
                   <button
                     className={`dm-funding-tab ${fundingSource === 'wallet' ? 'is-active' : ''}`}
-                    onClick={() => { setFundingSource('wallet'); setInitialFundingHbar(10); setFundingInputRaw('10') }}
+                    onClick={() => { if (fundingSource !== 'wallet') { setFundingSource('wallet'); setInitialFundingHbar(10); setFundingInputRaw('10') } }}
                     type="button"
                     disabled={isDeploying}
                   >
@@ -221,7 +231,7 @@ export default function DeployModal({
                   </button>
                   <button
                     className={`dm-funding-tab ${fundingSource === 'platform' ? 'is-active' : ''}`}
-                    onClick={() => { setFundingSource('platform'); setInitialFundingHbar(PLATFORM_FUNDING_CAP); setFundingInputRaw(String(PLATFORM_FUNDING_CAP)) }}
+                    onClick={() => { if (fundingSource !== 'platform') { setFundingSource('platform'); setInitialFundingHbar(PLATFORM_FUNDING_CAP); setFundingInputRaw(String(PLATFORM_FUNDING_CAP)) } }}
                     type="button"
                     disabled={isDeploying}
                   >
@@ -433,18 +443,32 @@ export default function DeployModal({
                           onChange={(e) => updateField(field.id, e.target.value)}
                           placeholder={field.placeholder}
                         />
+                      ) : field.input === 'number' ? (
+                        <input
+                          type="number"
+                          value={wizardRaw[field.id] ?? String(wizardValues[field.id] ?? '')}
+                          onChange={(e) => {
+                            setWizardRaw(prev => ({ ...prev, [field.id]: e.target.value }))
+                            const n = Number(e.target.value)
+                            if (e.target.value !== '' && !Number.isNaN(n)) {
+                              updateField(field.id, n)
+                            }
+                          }}
+                          onBlur={() => {
+                            const raw = wizardRaw[field.id] ?? ''
+                            const n = Number(raw)
+                            const fallback = (wizard?.defaults[field.id] as number) ?? 0
+                            const val = Number.isNaN(n) || raw === '' ? fallback : n
+                            updateField(field.id, val)
+                            setWizardRaw(prev => ({ ...prev, [field.id]: String(val) }))
+                          }}
+                          placeholder={field.placeholder}
+                        />
                       ) : (
                         <input
-                          type={field.input === 'number' ? 'number' : 'text'}
+                          type="text"
                           value={String(wizardValues[field.id] ?? '')}
-                          onChange={(e) =>
-                            updateField(
-                              field.id,
-                              field.input === 'number'
-                                ? e.target.value === '' ? '' : Number(e.target.value)
-                                : e.target.value,
-                            )
-                          }
+                          onChange={(e) => updateField(field.id, e.target.value)}
                           placeholder={field.placeholder}
                         />
                       )}

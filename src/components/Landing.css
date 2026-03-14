@@ -640,6 +640,18 @@
   transform: translateY(0);
 }
 
+.landing-cta-demo.is-loading {
+  pointer-events: none;
+  opacity: 0.85;
+  background: rgba(90, 214, 181, 0.15);
+  border-color: #5ad6b5;
+  color: #5ad6b5;
+}
+
+.demo-spinner {
+  flex-shrink: 0;
+}
+
 .landing-powered {
   font-size: 13px;
   color: #5a6888;
