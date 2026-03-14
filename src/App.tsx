@@ -373,7 +373,12 @@ function App() {
   // ─── Demo Seed Handler ──────────────────────────
   const handleTryDemo = useCallback(async () => {
     try {
-      await requestJson('/api/demo/seed', { method: 'POST' })
+      const result = await requestJson<{ seeded: number; token?: string }>('/api/demo/seed', { method: 'POST' })
+      // Store guest token so subsequent API calls are authenticated
+      if (result.token) {
+        const { setToken } = await import('./lib/auth')
+        setToken(result.token)
+      }
       await live.refreshLive()
       setShowOnboarding(false)
       setSelectedAgentId('')

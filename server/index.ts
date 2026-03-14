@@ -3636,7 +3636,17 @@ const demoSeedAgents = [
   },
 ]
 
-app.post('/api/demo/seed', requireAuth, async (_request, response) => {
+app.post('/api/demo/seed', async (_request, response) => {
+  // Auto-create a guest session if user is not authenticated
+  const authReq = _request as AuthenticatedRequest
+  let guestToken: string | null = null
+  if (!authReq.userId) {
+    const guestId = `demo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    authReq.userId = guestId
+    authReq.accountId = null
+    guestToken = issueToken(guestId, 'guest')
+  }
+
   // Clear existing deployments for a fresh demo
   db.clearAllDeployments()
   db.clearActivity()
@@ -3763,7 +3773,11 @@ app.post('/api/demo/seed', requireAuth, async (_request, response) => {
     })
   }
 
-  response.status(201).json({ seeded: created.length, deployments: created.map(safeDeployment) })
+  response.status(201).json({
+    seeded: created.length,
+    deployments: created.map(safeDeployment),
+    ...(guestToken ? { token: guestToken } : {}),
+  })
 })
 
 // ═══════════════════════════════════════════════════

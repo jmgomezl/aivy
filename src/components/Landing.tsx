@@ -1,10 +1,10 @@
-import { type CSSProperties } from 'react'
+import { type CSSProperties, useState } from 'react'
 import { templates, roomCards } from '../data'
 import './Landing.css'
 
 type LandingProps = {
   onEnter: () => void
-  onTryDemo: () => void
+  onTryDemo: () => Promise<void> | void
 }
 
 /* Each agent: walk class + bubble text */
@@ -34,6 +34,17 @@ const demoTickerItems = [
 ]
 
 export default function Landing({ onEnter, onTryDemo }: LandingProps) {
+  const [demoLoading, setDemoLoading] = useState(false)
+
+  const handleDemo = async () => {
+    setDemoLoading(true)
+    try {
+      await onTryDemo()
+    } finally {
+      setDemoLoading(false)
+    }
+  }
+
   return (
     <div className="landing">
       <div className="landing-content">
@@ -171,14 +182,28 @@ export default function Landing({ onEnter, onTryDemo }: LandingProps) {
             </svg>
           </button>
           <button
-            className="landing-cta-demo"
-            onClick={onTryDemo}
+            className={`landing-cta-demo${demoLoading ? ' is-loading' : ''}`}
+            onClick={handleDemo}
+            disabled={demoLoading}
             type="button"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polygon points="5 3 19 12 5 21 5 3" />
-            </svg>
-            Try Demo
+            {demoLoading ? (
+              <>
+                <svg className="demo-spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round">
+                    <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.7s" repeatCount="indefinite" />
+                  </path>
+                </svg>
+                Deploying on Hedera...
+              </>
+            ) : (
+              <>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg>
+                Try Demo
+              </>
+            )}
           </button>
         </div>
 
