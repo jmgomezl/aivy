@@ -580,6 +580,211 @@
 }
 
 /* ═══════════════════════════════════════════════════
+   Vault Architecture Showcase
+   ═══════════════════════════════════════════════════ */
+.vault-showcase {
+  width: 100%;
+  margin-top: 0.5rem;
+  border-radius: 16px;
+  border: 1px solid rgba(90, 214, 181, 0.15);
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(90, 214, 181, 0.06) 0%, transparent 50%),
+    rgba(8, 14, 28, 0.85);
+  padding: 2rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.vault-showcase-title {
+  font-family: 'VT323', monospace;
+  font-size: 22px;
+  color: #5ad6b5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.vault-showcase-sub {
+  font-size: 13.5px;
+  color: #b8c6e4;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.vault-showcase-sub strong {
+  color: #f4f8ff;
+}
+
+/* ─── Architecture Flow ───────────────────────────── */
+.vault-flow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 0;
+}
+
+.vault-flow-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(90, 214, 181, 0.2);
+  background: rgba(90, 214, 181, 0.06);
+}
+
+.vault-flow-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #5ad6b5, #4ecdc4);
+  color: #08111d;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.vault-flow-label {
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  color: #f4f8ff;
+  white-space: nowrap;
+}
+
+.vault-flow-arrow {
+  color: #5ad6b5;
+  font-size: 18px;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+/* ─── Code Block ──────────────────────────────────── */
+.vault-code-wrap {
+  border-radius: 10px;
+  border: 1px solid rgba(90, 214, 181, 0.12);
+  overflow: hidden;
+}
+
+.vault-code-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: rgba(90, 214, 181, 0.06);
+  border-bottom: 1px solid rgba(90, 214, 181, 0.08);
+}
+
+.vault-code-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(184, 198, 228, 0.2);
+}
+
+.vault-code-dot:nth-child(1) { background: #f25f5c; opacity: 0.7; }
+.vault-code-dot:nth-child(2) { background: #f3c35f; opacity: 0.7; }
+.vault-code-dot:nth-child(3) { background: #5ad6b5; opacity: 0.7; }
+
+.vault-code-filename {
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  color: #8390ad;
+  margin-left: 6px;
+}
+
+.vault-code {
+  margin: 0;
+  padding: 16px 18px;
+  background: #0d1117;
+  overflow-x: auto;
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  color: #c9d1d9;
+  tab-size: 4;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.vault-code code {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* Scrollbar styling for code block */
+.vault-code::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.vault-code::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.vault-code::-webkit-scrollbar-thumb {
+  background: rgba(90, 214, 181, 0.2);
+  border-radius: 3px;
+}
+
+/* ─── Feature Cards ───────────────────────────────── */
+.vault-features {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+
+.vault-feat {
+  padding: 1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  text-align: center;
+}
+
+.vault-feat-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 0.6rem;
+  background: linear-gradient(135deg, rgba(90, 214, 181, 0.15), rgba(243, 195, 95, 0.1));
+  color: #5ad6b5;
+}
+
+.vault-feat h4 {
+  font-family: 'VT323', monospace;
+  font-size: 16px;
+  color: #f4f8ff;
+  margin: 0 0 0.25rem;
+}
+
+.vault-feat p {
+  font-size: 12px;
+  color: #8390ad;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.vault-feat code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: #5ad6b5;
+  background: rgba(90, 214, 181, 0.1);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* ═══════════════════════════════════════════════════
    CTA Button
    ═══════════════════════════════════════════════════ */
 .landing-cta-group {
@@ -700,5 +905,28 @@
   .demo-recv-beacon {
     width: 6px;
     height: 6px;
+  }
+
+  /* Vault showcase responsive */
+  .vault-showcase {
+    padding: 1.25rem 1rem;
+  }
+
+  .vault-flow {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .vault-flow-arrow {
+    transform: rotate(90deg);
+  }
+
+  .vault-features {
+    grid-template-columns: 1fr;
+  }
+
+  .vault-code {
+    font-size: 10.5px;
+    max-height: 300px;
   }
 }
