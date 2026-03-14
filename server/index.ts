@@ -3619,7 +3619,7 @@ const demoSeedAgents = [
   {
     templateId: 'compliance-clerk',
     name: 'Audit Bot',
-    room: 'Forum Deck',
+    room: 'War Room',
     guardrail: 'Read-only access, no mutations',
     vaultProtected: false,
     vaultCapHbar: 0,
@@ -3647,10 +3647,11 @@ app.post('/api/demo/seed', async (_request, response) => {
     guestToken = issueToken(guestId, 'guest')
   }
 
-  // Clear existing deployments for a fresh demo
-  db.clearAllDeployments()
-  db.clearActivity()
-  db.clearAllChatHistory()
+  // Clear existing deployments for THIS user only (not all users)
+  const userId = authReq.userId!
+  db.clearChatHistoryByUser(userId)
+  db.clearDeploymentsByUser(userId)
+  db.clearActivityByUser(userId)
   coordinationLog.length = 0
 
   const created: DeploymentRecord[] = []
