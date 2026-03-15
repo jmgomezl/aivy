@@ -13,7 +13,8 @@
   <a href="https://aivylabs.xyz">Live Demo</a> &bull;
   <a href="docs/ARCHITECTURE.md">Architecture</a> &bull;
   <a href="docs/PRODUCT_BRIEF.md">Product Brief</a> &bull;
-  <a href="contracts/AivyVault.sol">Smart Contract</a>
+  <a href="contracts/AivyVault.sol">AivyVault</a> &bull;
+  <a href="docs/ERC8183.md">ERC-8183</a>
 </p>
 
 ---
@@ -70,6 +71,7 @@ This means spending limits are enforced **on-chain**, not just in application co
 - **Guardrail updates** — Owner can adjust spending caps and pause state
 - **Provisioning events** — `VaultProvisioned` emitted on deployment for audit trail
 - **Receive fallback** — Contract can hold HBAR for agent operations
+- **ERC-8183 integration** — Vault caps are checked before agents can fund [agent-to-agent jobs](docs/ERC8183.md)
 
 ### Mirror Node Event Polling
 
@@ -93,9 +95,7 @@ Users connect their HashPack wallet via WalletConnect/HashConnect v3 to:
 
 ## Screenshots
 
-| Pixel Office | Agent Detail |
-|:------------:|:------------:|
-| ![Office](docs/screenshots/office.png) | ![Landing](docs/screenshots/landing.png) |
+![Aivy Office](docs/screenshots/landing.png)
 
 ---
 
@@ -114,6 +114,7 @@ Users connect their HashPack wallet via WalletConnect/HashConnect v3 to:
 | **AI Chat** | Natural language interface — GPT-4o routes to the right Hedera tools |
 | **Multi-Agent Routing** | Ask a question, Aivy picks the best agent to answer |
 | **Agent Coordination** | Agents trigger actions on other agents (e.g., low balance alerts) |
+| **ERC-8183 Settlements** | [AivyJobManager.sol](contracts/AivyJobManager.sol) — trustless agent-to-agent payments with escrow ([docs](docs/ERC8183.md)) |
 | **Live Activity Feed** | Mirror Node-backed ticker with HashScan transaction links |
 | **Global Wallet State** | WalletContext provides batch balance pre-fetching and 30s auto-refresh |
 | **Mobile Support** | Touch-friendly with long-press hover cards, responsive layout |
@@ -128,12 +129,12 @@ Users connect their HashPack wallet via WalletConnect/HashConnect v3 to:
 | Office Engine | Pixel sprites with CSS animations, room-based layout |
 | Backend | Express 5, Node.js, SQLite (better-sqlite3) |
 | AI | OpenAI GPT-4o with function calling |
-| Blockchain | Hedera SDK, Hedera Agent Kit, Solidity (AivyVault) |
-| Smart Contract | [AivyVault.sol](contracts/AivyVault.sol) — Solidity ^0.8.24, compiled via solc-js |
+| Blockchain | Hedera SDK, Hedera Agent Kit, Solidity (AivyVault + AivyJobManager) |
+| Smart Contracts | [AivyVault.sol](contracts/AivyVault.sol) + [AivyJobManager.sol](contracts/AivyJobManager.sol) — Solidity ^0.8.24, compiled via solc-js |
 | Security | AES-256-GCM key encryption, JWT auth, rate limiting |
 | Automation | node-cron, Mirror Node REST polling |
 | Wallet | HashConnect v3, WalletConnect |
-| Testing | Vitest, 140+ unit tests |
+| Testing | Vitest, 159+ unit tests |
 
 ---
 
@@ -169,7 +170,7 @@ Security keys (`MASTER_ENCRYPTION_KEY`, `JWT_SECRET`) are auto-generated on firs
 ```bash
 npm run build    # TypeScript + Vite production bundle
 npm run lint     # ESLint check
-npm test         # Run 140+ unit tests via Vitest
+npm test         # Run 159+ unit tests via Vitest
 ```
 
 ---
@@ -210,10 +211,11 @@ Deploy Agent → Compile AivyVault.sol → Deploy to Hedera EVM → Enforce Caps
 ```
 contracts/
   AivyVault.sol         # On-chain spending guardrails (Solidity ^0.8.24)
+  AivyJobManager.sol    # ERC-8183 agent-to-agent settlements with escrow
 
 server/
-  index.ts              # Express API — agents, chat, tools, schedules, triggers
-  db.ts                 # SQLite — deployments, spending, schedules, triggers
+  index.ts              # Express API — agents, chat, tools, schedules, triggers, jobs
+  db.ts                 # SQLite — deployments, spending, schedules, triggers, jobs
   auth.ts               # JWT challenge-response with Hedera account verification
   crypto.ts             # AES-256-GCM encryption for agent private keys
   scheduler.ts          # node-cron wrapper for autonomous agent execution
