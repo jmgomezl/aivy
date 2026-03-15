@@ -16,11 +16,15 @@
     "start:server": "node server-dist/index.js"
   },
   "dependencies": {
+    "@bonzofinancelabs/hak-bonzo-plugin": "^1.0.1",
+    "@buidlerlabs/hak-memejob-plugin": "^1.0.2",
     "@hashgraph/hedera-wallet-connect": "^2.0.6",
     "@hashgraph/sdk": "^2.80.0",
     "@hiero-ledger/proto": "^2.25.0",
     "@hiero-ledger/sdk": "^2.79.0",
     "better-sqlite3": "^11.10.0",
+    "chainlink-pricefeed-plugin": "^1.0.4",
+    "coincap-hedera-plugin": "^1.0.4",
     "concurrently": "^9.2.1",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
@@ -39,6 +43,7 @@
     "react-dom": "^19.2.0",
     "solc": "^0.8.34",
     "tsx": "^4.21.0",
+    "viem": "^2.47.4",
     "zod": "^4.3.6"
   },
   "devDependencies": {

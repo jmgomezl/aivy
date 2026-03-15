@@ -41,6 +41,8 @@ import { startSchedule, stopSchedule, stopAllSchedules, validateCron, acquireAge
 import { startPoller, stopPoller } from './eventPoller.js'
 import { saucerswapPlugin } from 'hak-saucerswap-plugin'
 import { pythPlugin } from 'hak-pyth-plugin'
+import { memejobPlugin } from '@buidlerlabs/hak-memejob-plugin'
+import { bonzoPlugin } from '@bonzofinancelabs/hak-bonzo-plugin'
 
 dotenv.config()
 initMasterKey()
@@ -79,11 +81,20 @@ const capabilityGroupIds = [
   'transactionQueries',
   'saucerswap',
   'pyth',
+  'memejob',
+  'bonzo',
+  'coincap',
+  'chainlink',
 ] as const
 
 // Third-party plugin tool names
 const saucerswapTools = saucerswapPlugin.tools().map((t: { name: string }) => t.name)
 const pythTools = pythPlugin.tools().map((t: { name: string }) => t.name)
+const memejobTools = memejobPlugin.tools().map((t: { method: string }) => t.method)
+const bonzoTools = bonzoPlugin.tools().map((t: { method: string }) => t.method)
+// CoinCap & Chainlink plugins have broken ESM packaging — hardcode their single tool names
+const coincapTools = ['get_hbar_price_in_USD_tool']
+const chainlinkTools = ['get_chainlink_price_feed_tool']
 
 type CapabilityGroupId = (typeof capabilityGroupIds)[number]
 type ActivityTone = 'system' | 'success' | 'vault'
@@ -480,6 +491,34 @@ const capabilityGroups: ToolCatalogGroup[] = [
     tone: 'amber',
     tools: pythTools,
   },
+  {
+    id: 'memejob',
+    label: 'Memejob',
+    description: 'Create, buy, and sell meme tokens on the Memejob protocol.',
+    tone: 'rose',
+    tools: memejobTools,
+  },
+  {
+    id: 'bonzo',
+    label: 'Bonzo Finance',
+    description: 'Decentralised lending and borrowing on Hedera via Bonzo (Aave v2).',
+    tone: 'teal',
+    tools: bonzoTools,
+  },
+  {
+    id: 'coincap',
+    label: 'CoinCap',
+    description: 'Get real-time HBAR price in USD from CoinCap API.',
+    tone: 'amber',
+    tools: coincapTools,
+  },
+  {
+    id: 'chainlink',
+    label: 'Chainlink Oracles',
+    description: 'Price feeds from Chainlink decentralised oracles (BTC, ETH, HBAR, LINK, USDC, USDT, DAI).',
+    tone: 'blue',
+    tools: chainlinkTools,
+  },
 ]
 
 const defaultCapabilityGroupsByTemplate: Record<string, CapabilityGroupId[]> = {
@@ -490,6 +529,8 @@ const defaultCapabilityGroupsByTemplate: Record<string, CapabilityGroupId[]> = {
     'consensusQueries',
     'transactionQueries',
     'networkQueries',
+    'coincap',
+    'chainlink',
   ],
   'yield-router': [
     'accounts',
@@ -502,6 +543,8 @@ const defaultCapabilityGroupsByTemplate: Record<string, CapabilityGroupId[]> = {
     'networkQueries',
     'saucerswap',
     'pyth',
+    'bonzo',
+    'memejob',
   ],
   'compliance-clerk': [
     'accountQueries',
@@ -510,6 +553,8 @@ const defaultCapabilityGroupsByTemplate: Record<string, CapabilityGroupId[]> = {
     'contractQueries',
     'transactionQueries',
     'networkQueries',
+    'coincap',
+    'chainlink',
   ],
   'governance-relay': [
     'accounts',
@@ -527,6 +572,8 @@ const suggestedToolsByTemplate: Record<string, string[]> = {
     coreAccountQueryPluginToolNames.GET_HBAR_BALANCE_QUERY_TOOL,
     coreConsensusPluginToolNames.CREATE_TOPIC_TOOL,
     coreConsensusPluginToolNames.SUBMIT_TOPIC_MESSAGE_TOOL,
+    ...coincapTools,
+    ...chainlinkTools,
   ],
   'yield-router': [
     coreTokenPluginToolNames.CREATE_FUNGIBLE_TOKEN_TOOL,
@@ -535,6 +582,8 @@ const suggestedToolsByTemplate: Record<string, string[]> = {
     coreEVMPluginToolNames.TRANSFER_ERC20_TOOL,
     ...saucerswapTools.slice(0, 2),
     ...pythTools.slice(0, 1),
+    ...bonzoTools.slice(0, 2),
+    ...memejobTools.slice(0, 1),
   ],
   'compliance-clerk': [
     coreAccountQueryPluginToolNames.GET_ACCOUNT_QUERY_TOOL,
@@ -3670,7 +3719,7 @@ const demoSeedAgents = [
     guardrail: 'Max 250 HBAR per transaction',
     vaultProtected: true,
     vaultCapHbar: 250,
-    capabilityGroups: ['accounts', 'accountQueries', 'consensus', 'consensusQueries', 'transactionQueries', 'networkQueries'] as CapabilityGroupId[],
+    capabilityGroups: ['accounts', 'accountQueries', 'consensus', 'consensusQueries', 'transactionQueries', 'networkQueries', 'coincap', 'chainlink'] as CapabilityGroupId[],
   },
   {
     templateId: 'yield-router',
@@ -3679,7 +3728,7 @@ const demoSeedAgents = [
     guardrail: 'Only approved token operations',
     vaultProtected: true,
     vaultCapHbar: 500,
-    capabilityGroups: ['accounts', 'accountQueries', 'tokens', 'tokenQueries', 'contracts', 'contractQueries', 'transactionQueries', 'networkQueries', 'saucerswap', 'pyth'] as CapabilityGroupId[],
+    capabilityGroups: ['accounts', 'accountQueries', 'tokens', 'tokenQueries', 'contracts', 'contractQueries', 'transactionQueries', 'networkQueries', 'saucerswap', 'pyth', 'bonzo', 'memejob'] as CapabilityGroupId[],
   },
   {
     templateId: 'compliance-clerk',
@@ -3688,7 +3737,7 @@ const demoSeedAgents = [
     guardrail: 'Read-only access, no mutations',
     vaultProtected: false,
     vaultCapHbar: 0,
-    capabilityGroups: ['accountQueries', 'consensusQueries', 'tokenQueries', 'contractQueries', 'transactionQueries', 'networkQueries'] as CapabilityGroupId[],
+    capabilityGroups: ['accountQueries', 'consensusQueries', 'tokenQueries', 'contractQueries', 'transactionQueries', 'networkQueries', 'coincap', 'chainlink'] as CapabilityGroupId[],
   },
   {
     templateId: 'governance-relay',

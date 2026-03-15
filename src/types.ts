@@ -15,6 +15,10 @@ export type CapabilityGroupId =
   | 'transactionQueries'
   | 'saucerswap'
   | 'pyth'
+  | 'memejob'
+  | 'bonzo'
+  | 'coincap'
+  | 'chainlink'
 
 export type AgentTemplate = {
   id: string
