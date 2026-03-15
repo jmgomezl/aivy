@@ -38,7 +38,8 @@ export type NetworkStats = {
   safeVaults: number
   totalExecutions: number
   pendingTransactions: number
-  hbarSecured: number
+  hbarSecured: number   // vault spending caps (governance limit)
+  totalBalance: number  // net funded balance across all agents (funded - spent)
 }
 
 export type ServerDeployment = {

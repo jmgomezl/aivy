@@ -1,5 +1,6 @@
-import { type CSSProperties, useState } from 'react'
+import { type CSSProperties, useState, useEffect, useMemo } from 'react'
 import { templates, roomCards } from '../data'
+import { getSpriteSheet, ensureSpritesLoaded, agentNameToSpriteType } from '../sprites/generateSprites'
 import './Landing.css'
 
 /* ── AivyVault Solidity source (deployed per-agent on Hedera) ── */
@@ -95,6 +96,32 @@ const demoTickerItems = [
   { text: 'Treasury Sentinel: Transferred 25 HBAR', tone: 'vault' },
 ]
 
+/** Animated pixel sprite for the landing page using the tileset */
+function LandingSprite({ name }: { name: string }) {
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    ensureSpritesLoaded().then(() => setReady(true))
+  }, [])
+
+  const spriteUrl = useMemo(() => {
+    if (!ready) return ''
+    const type = agentNameToSpriteType(name)
+    return getSpriteSheet(type)
+  }, [name, ready])
+
+  if (!spriteUrl) return <div style={{ width: 34, height: 34 }} />
+
+  return (
+    <div
+      className="pixel-sprite"
+      style={{ backgroundImage: `url(${spriteUrl})` }}
+      role="img"
+      aria-label={name}
+    />
+  )
+}
+
 export default function Landing({ onEnter, onTryDemo }: LandingProps) {
   const [demoLoading, setDemoLoading] = useState(false)
 
@@ -135,7 +162,7 @@ export default function Landing({ onEnter, onTryDemo }: LandingProps) {
                   key={template.id}
                   style={{ '--sprite-color': template.color } as CSSProperties}
                 >
-                  <img alt="" className="pixel-image" src={template.sprite} />
+                  <LandingSprite name={template.name} />
                   <span className="preview-agent-ring" />
                   <span className="demo-work-dots">
                     <span /><span /><span />

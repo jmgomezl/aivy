@@ -16,11 +16,11 @@ import { requestJson, summarizeResultReferences, resolveWorkflowValue } from './
 
 import { useLiveData } from './hooks/useLiveData'
 import { useToolCatalog } from './hooks/useToolCatalog'
-import { useWallet } from './hooks/useWallet'
+import { WalletProvider, useWalletContext } from './contexts/WalletContext'
 
 import Landing from './components/Landing'
 import TopBar from './components/TopBar'
-import PixelOffice from './components/PixelOffice'
+import PhaserOffice, { type CoordTrigger } from './phaser/PhaserOffice'
 import AgentPanel from './components/AgentPanel'
 import DeployModal from './components/DeployModal'
 import ToolLibrary from './components/ToolLibrary'
@@ -28,6 +28,7 @@ import ResultDrawer from './components/ResultDrawer'
 import OnboardingTour from './components/OnboardingTour'
 import DemoCoach from './components/DemoCoach'
 import Dashboard from './components/Dashboard'
+import FundModal from './components/FundModal'
 import { ToastProvider } from './components/Toast'
 
 // ─── Error Boundary ────────────────────────────
@@ -83,6 +84,7 @@ function App() {
   const [view, setView] = useState<'landing' | 'office' | 'dashboard'>('landing')
   const [selectedAgentId, setSelectedAgentId] = useState('')
   const [deployModalOpen, setDeployModalOpen] = useState(false)
+  const [fundModalAgentId, setFundModalAgentId] = useState('')
   const [deployTemplateId, setDeployTemplateId] = useState(templates[0].id)
   const [toolModalOpen, setToolModalOpen] = useState(false)
   const [toolInitialName, setToolInitialName] = useState<string | undefined>()
@@ -115,13 +117,14 @@ function App() {
   // ─── Hooks ────────────────────────────────────
   const live = useLiveData()
   const toolCatalog = useToolCatalog()
-  const { wallet, connectWallet, disconnectWallet, sessionAccountId, logout } = useWallet()
+  const { wallet, connectWallet, disconnectWallet, sessionAccountId, logout, balanceVersion, invalidateBalances } = useWalletContext()
 
   // Derive user account ID from connected wallet or persisted session
   const userAccountId = wallet.status === 'connected' ? wallet.accountId : sessionAccountId
 
   // ─── Derived State ────────────────────────────
   const selectedAgent = live.agents.find((a) => a.id === selectedAgentId) ?? null
+  const fundAgent = live.agents.find((a) => a.id === fundModalAgentId) ?? null
 
   // ─── Deploy Handler ───────────────────────────
   const handleDeploy = useCallback(async (payload: {
@@ -311,9 +314,36 @@ function App() {
   }, [selectedAgent, live.operatorAccountId, openToolLibrary])
 
   // ─── Chat Reply Handler ─────────────────────────
+  const [coordTrigger, setCoordTrigger] = useState<CoordTrigger>(null)
+
+  const ADJACENT_ROOMS: Record<string, string[]> = {
+    'Launch Bay': ['Strategy Pit', 'Forum Deck'],
+    'Strategy Pit': ['Launch Bay', 'War Room'],
+    'Forum Deck': ['Launch Bay', 'War Room'],
+    'War Room': ['Strategy Pit', 'Forum Deck'],
+  }
+
   const handleAgentReply = useCallback((agentId: string, message: string) => {
     setLastChatMessages((prev) => ({ ...prev, [agentId]: message }))
-  }, [])
+
+    // Fire a real coordination animation from the replying agent to an adjacent neighbor
+    const agent = live.agents.find((a) => a.id === agentId)
+    if (!agent) return
+
+    const adjRooms = ADJACENT_ROOMS[agent.room] ?? []
+    const candidates = live.agents.filter((a) => a.id !== agentId && adjRooms.includes(a.room))
+    if (candidates.length === 0) return
+
+    const target = candidates[Math.floor(Math.random() * candidates.length)]
+    const truncated = message.length > 35 ? message.slice(0, 35) + '...' : message
+
+    setCoordTrigger({
+      srcId: agent.id,
+      tgtId: target.id,
+      action: 'cross_room_relay',
+      label: `${agent.name}: ${truncated}`,
+    })
+  }, [live.agents])
 
   // ─── Keyboard Shortcuts ──────────────────────────
   useEffect(() => {
@@ -322,6 +352,7 @@ function App() {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
 
       if (e.key === 'Escape') {
+        if (fundModalAgentId) { setFundModalAgentId(''); return }
         if (resultDrawer) { setResultDrawer(null); return }
         if (toolModalOpen) { setToolModalOpen(false); return }
         if (deployModalOpen) { setDeployModalOpen(false); return }
@@ -355,7 +386,7 @@ function App() {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [view, selectedAgentId, deployModalOpen, toolModalOpen, resultDrawer, live.agents])
+  }, [view, selectedAgentId, deployModalOpen, toolModalOpen, resultDrawer, fundModalAgentId, live.agents])
 
   // ─── Agent Activity Tracking (for overlay animation) ──
   const markAgentActive = useCallback((agentId: string) => {
@@ -401,11 +432,6 @@ function App() {
       <TopBar
         networkLabel={live.networkLabel}
         operatorAccountId={live.operatorAccountId}
-        wallet={wallet}
-        sessionAccountId={sessionAccountId}
-        onConnectWallet={connectWallet}
-        onDisconnectWallet={disconnectWallet}
-        onLogout={logout}
         theme={theme}
         onToggleTheme={toggleTheme}
         activeView={view === 'dashboard' ? 'dashboard' : 'office'}
@@ -432,7 +458,7 @@ function App() {
         {view === 'dashboard' ? (
           <Dashboard />
         ) : (
-          <PixelOffice
+          <PhaserOffice
             agents={live.agents}
             stats={live.stats}
             events={live.events}
@@ -440,13 +466,16 @@ function App() {
             selectedAgentId={selectedAgentId}
             lastChatMessages={lastChatMessages}
             activeAgentIds={activeAgentIds}
+            coordTrigger={coordTrigger}
             userAccountId={userAccountId}
+            mirrorNodeUrl={live.mirrorNodeUrl}
             onSelectAgent={setSelectedAgentId}
             onDeploy={(templateId) => {
               setDeployTemplateId(templateId)
               setDeployError('')
               setDeployModalOpen(true)
             }}
+            onFundAgent={setFundModalAgentId}
             onAgentReply={handleAgentReply}
             onRefresh={live.refreshLive}
           />
@@ -463,8 +492,6 @@ function App() {
           chatEnabled={live.chatEnabled}
           events={live.events}
           allAgents={live.agents}
-          wallet={wallet}
-          onConnectWallet={connectWallet}
           onClose={() => setSelectedAgentId('')}
           onRunAgent={runSelectedAgent}
           onToggleAgent={toggleSelectedAgent}
@@ -474,6 +501,9 @@ function App() {
           onAgentReply={handleAgentReply}
           onRefresh={live.refreshLive}
           onMarkActive={markAgentActive}
+          onFund={selectedAgent.walletType === 'dedicated' && selectedAgent.agentAccountId
+            ? () => setFundModalAgentId(selectedAgent.id)
+            : undefined}
         />
       )}
 
@@ -489,10 +519,20 @@ function App() {
           operatorAccountId={live.operatorAccountId}
           mirrorNodeUrl={live.mirrorNodeUrl}
           deployError={deployError}
-          wallet={wallet}
-          onConnectWallet={connectWallet}
           onDeploy={handleDeploy}
           onClose={() => setDeployModalOpen(false)}
+        />
+      )}
+
+      {/* ─── Quick Fund Modal ──────────────────── */}
+      {fundAgent && fundAgent.walletType === 'dedicated' && fundAgent.agentAccountId && (
+        <FundModal
+          agent={fundAgent}
+          allAgents={live.agents}
+          onSelectAgent={setFundModalAgentId}
+          mirrorNodeUrl={live.mirrorNodeUrl}
+          onClose={() => setFundModalAgentId('')}
+          onSuccess={() => { live.refreshLive(); invalidateBalances() }}
         />
       )}
 
@@ -540,7 +580,9 @@ function App() {
 function AppWithBoundary() {
   return (
     <ErrorBoundary>
-      <App />
+      <WalletProvider>
+        <App />
+      </WalletProvider>
     </ErrorBoundary>
   )
 }

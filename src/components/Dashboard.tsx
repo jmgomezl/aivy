@@ -111,7 +111,7 @@ export default function Dashboard() {
         </div>
         <div className="dash-card accent-teal">
           <span className="dash-card-value">{summary.totalVaultCapHbar.toFixed(0)}</span>
-          <span className="dash-card-label">HBAR Secured</span>
+          <span className="dash-card-label">Vault Cap (HBAR)</span>
           <span className="dash-card-sub">{summary.vaultUtilization}% vault protected</span>
         </div>
         <div className="dash-card accent-purple">

@@ -127,8 +127,8 @@
    ═══════════════════════════════════════════════════ */
 .preview-agent {
   position: absolute;
-  width: 34px;
-  height: 34px;
+  width: 56px;
+  height: 56px;
   transform: translate(-50%, -50%);
   z-index: 1;
 }
@@ -139,6 +139,17 @@
   image-rendering: pixelated;
   image-rendering: crisp-edges;
   filter: drop-shadow(0 0 8px var(--sprite-color));
+  animation: demo-bob 2.4s ease-in-out infinite;
+}
+
+.preview-agent .pixel-sprite {
+  width: 56px;
+  height: 56px;
+  margin: 0;
+  background-size: 100% 100%;
+  background-color: rgba(0, 0, 0, 0.4);
+  border-radius: 8px;
+  filter: drop-shadow(0 0 12px var(--sprite-color));
   animation: demo-bob 2.4s ease-in-out infinite;
 }
 
@@ -888,8 +899,8 @@
   }
 
   .preview-agent {
-    width: 26px;
-    height: 26px;
+    width: 40px;
+    height: 40px;
   }
 
   .demo-work-dots span {
