@@ -39,6 +39,8 @@ import { authMiddleware, requireAuth, type AuthRequest } from './middleware.js'
 import { deployLimiter, chatLimiter, toolLimiter, readLimiter, authLimiter } from './rateLimiter.js'
 import { startSchedule, stopSchedule, stopAllSchedules, validateCron, acquireAgentLock, releaseAgentLock } from './scheduler.js'
 import { startPoller, stopPoller } from './eventPoller.js'
+import { saucerswapPlugin } from 'hak-saucerswap-plugin'
+import { pythPlugin } from 'hak-pyth-plugin'
 
 dotenv.config()
 initMasterKey()
@@ -75,7 +77,13 @@ const capabilityGroupIds = [
   'contractQueries',
   'networkQueries',
   'transactionQueries',
+  'saucerswap',
+  'pyth',
 ] as const
+
+// Third-party plugin tool names
+const saucerswapTools = saucerswapPlugin.tools().map((t: { name: string }) => t.name)
+const pythTools = pythPlugin.tools().map((t: { name: string }) => t.name)
 
 type CapabilityGroupId = (typeof capabilityGroupIds)[number]
 type ActivityTone = 'system' | 'success' | 'vault'
@@ -458,6 +466,20 @@ const capabilityGroups: ToolCatalogGroup[] = [
     tone: 'blue',
     tools: allTransactionQueryTools,
   },
+  {
+    id: 'saucerswap',
+    label: 'SaucerSwap DEX',
+    description: 'Token swaps, liquidity pools, and yield farming on SaucerSwap.',
+    tone: 'teal',
+    tools: saucerswapTools,
+  },
+  {
+    id: 'pyth',
+    label: 'Pyth Oracle',
+    description: 'Real-time price feeds from Pyth Network (400+ assets).',
+    tone: 'amber',
+    tools: pythTools,
+  },
 ]
 
 const defaultCapabilityGroupsByTemplate: Record<string, CapabilityGroupId[]> = {
@@ -478,6 +500,8 @@ const defaultCapabilityGroupsByTemplate: Record<string, CapabilityGroupId[]> = {
     'contractQueries',
     'transactionQueries',
     'networkQueries',
+    'saucerswap',
+    'pyth',
   ],
   'compliance-clerk': [
     'accountQueries',
@@ -509,6 +533,8 @@ const suggestedToolsByTemplate: Record<string, string[]> = {
     coreTokenPluginToolNames.MINT_FUNGIBLE_TOKEN_TOOL,
     coreEVMPluginToolNames.CREATE_ERC20_TOOL,
     coreEVMPluginToolNames.TRANSFER_ERC20_TOOL,
+    ...saucerswapTools.slice(0, 2),
+    ...pythTools.slice(0, 1),
   ],
   'compliance-clerk': [
     coreAccountQueryPluginToolNames.GET_ACCOUNT_QUERY_TOOL,
@@ -3653,7 +3679,7 @@ const demoSeedAgents = [
     guardrail: 'Only approved token operations',
     vaultProtected: true,
     vaultCapHbar: 500,
-    capabilityGroups: ['accounts', 'accountQueries', 'tokens', 'tokenQueries', 'contracts', 'contractQueries', 'transactionQueries', 'networkQueries'] as CapabilityGroupId[],
+    capabilityGroups: ['accounts', 'accountQueries', 'tokens', 'tokenQueries', 'contracts', 'contractQueries', 'transactionQueries', 'networkQueries', 'saucerswap', 'pyth'] as CapabilityGroupId[],
   },
   {
     templateId: 'compliance-clerk',
@@ -3688,6 +3714,7 @@ app.post('/api/demo/seed', async (_request, response) => {
 
   // Clear existing deployments for THIS user only (not all users)
   const userId = authReq.userId!
+  db.clearJobsByUser(userId)
   db.clearChatHistoryByUser(userId)
   db.clearDeploymentsByUser(userId)
   db.clearActivityByUser(userId)
@@ -3780,10 +3807,9 @@ app.post('/api/demo/seed', async (_request, response) => {
     )
   }
 
-  // Add coordination events for flavor
-  const items = db.getAllDeployments()
-  const treasury = items.find(d => d.templateId === 'treasury-sentinel')
-  const yieldAgent = items.find(d => d.templateId === 'yield-router')
+  // Add coordination events for flavor — use only THIS user's just-created agents
+  const treasury = created.find(d => d.templateId === 'treasury-sentinel')
+  const yieldAgent = created.find(d => d.templateId === 'yield-router')
   if (treasury && yieldAgent) {
     coordinationLog.unshift({
       id: `coord-demo-${Date.now()}`,
@@ -3798,7 +3824,7 @@ app.post('/api/demo/seed', async (_request, response) => {
     })
   }
 
-  const govAgent = items.find(d => d.templateId === 'governance-relay')
+  const govAgent = created.find(d => d.templateId === 'governance-relay')
   if (treasury && govAgent) {
     coordinationLog.unshift({
       id: `coord-demo2-${Date.now()}`,
@@ -3811,6 +3837,73 @@ app.post('/api/demo/seed', async (_request, response) => {
       timestamp: new Date().toISOString(),
       status: 'completed',
     })
+  }
+
+  // ─── Demo ERC-8183 Jobs ──────────────────────────
+  const auditAgent = created.find(d => d.templateId === 'compliance-clerk')
+  const demoJobSpecs: Array<{
+    client: DeploymentRecord | undefined
+    provider: DeploymentRecord | undefined
+    budgetHbar: number
+    description: string
+    status: db.JobRecord['status']
+    deliverable: string | null
+  }> = [
+    {
+      client: treasury,
+      provider: yieldAgent,
+      budgetHbar: 10,
+      description: 'Optimize yield strategy for Q1 treasury reserves',
+      status: 'Completed',
+      deliverable: 'Routed 500 HBAR to SaucerSwap HBAR-USDC pool at 4.2% APY. Net gain: 5.25 HBAR.',
+    },
+    {
+      client: yieldAgent,
+      provider: auditAgent,
+      budgetHbar: 3,
+      description: 'Audit token swap transactions from last 24h',
+      status: 'Submitted',
+      deliverable: 'Reviewed 12 swap transactions. All within slippage limits. No anomalies detected.',
+    },
+    {
+      client: govAgent,
+      provider: treasury,
+      budgetHbar: 25,
+      description: 'Execute approved governance proposal #7: fund community grants',
+      status: 'Funded',
+      deliverable: null,
+    },
+    {
+      client: treasury,
+      provider: auditAgent,
+      budgetHbar: 5,
+      description: 'Verify vault spending cap compliance across all agents',
+      status: 'Open',
+      deliverable: null,
+    },
+  ]
+
+  for (const spec of demoJobSpecs) {
+    if (!spec.client || !spec.provider) continue
+    const jobId = `job-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
+    const job: db.JobRecord = {
+      id: jobId,
+      jobChainId: 1,
+      clientAgentId: spec.client.id,
+      providerAgentId: spec.provider.id,
+      evaluatorAddress: config.operatorAccountId || null,
+      description: spec.description,
+      budgetHbar: spec.budgetHbar,
+      expiredAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+      status: spec.status,
+      deliverable: spec.deliverable,
+      contractId: nextDemoContractId(),
+      txId: nextDemoTxId(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    db.insertJob(job)
+    pushActivity(`ERC-8183 job: ${spec.client.name} → ${spec.provider.name} (${spec.budgetHbar} ℏ) [${spec.status}]`, 'vault')
   }
 
   response.status(201).json({

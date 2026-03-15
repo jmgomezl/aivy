@@ -1050,6 +1050,152 @@
   white-space: nowrap;
 }
 
+/* ─── Jobs Tab (ERC-8183) ──────────────────────── */
+.ap-jobs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.ap-jobs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ap-job-create {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(90, 214, 181, 0.15);
+  background: rgba(90, 214, 181, 0.04);
+}
+
+.ap-job-create-row {
+  display: flex;
+  gap: 8px;
+}
+
+.ap-job-create-row .ap-fund-input {
+  width: 90px;
+}
+
+.ap-job-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ap-job-card {
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ap-job-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ap-job-role {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-muted);
+  font-weight: 600;
+}
+
+.ap-job-status {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.ap-job-desc {
+  font-size: 13px;
+  color: var(--color-text-soft, #c4d0e4);
+  line-height: 1.4;
+}
+
+.ap-job-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+.ap-job-budget {
+  font-weight: 700;
+  color: #f3c35f;
+}
+
+.ap-job-deliverable {
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(90, 214, 181, 0.06);
+  border: 1px solid rgba(90, 214, 181, 0.1);
+}
+
+.ap-job-deliverable-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #5ad6b5;
+  font-weight: 600;
+}
+
+.ap-job-deliverable p {
+  font-size: 12px;
+  color: var(--color-text-soft);
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.ap-job-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.ap-btn-small {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-text-soft);
+  font-size: 11px;
+  font-family: 'Space Grotesk', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.ap-btn-small:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ap-btn-small.primary {
+  background: rgba(90, 214, 181, 0.12);
+  border-color: rgba(90, 214, 181, 0.3);
+  color: #5ad6b5;
+}
+
+.ap-btn-small.primary:hover:not(:disabled) {
+  background: rgba(90, 214, 181, 0.2);
+}
+
+.ap-btn-small:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ─── Automation Tab ──────────────────────────── */
 .ap-automation {
   display: flex;

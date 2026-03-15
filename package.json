@@ -27,6 +27,8 @@
     "ethers": "^6.16.0",
     "express": "^5.2.1",
     "express-rate-limit": "^8.3.0",
+    "hak-pyth-plugin": "^0.1.1",
+    "hak-saucerswap-plugin": "^1.0.1",
     "hashconnect": "^3.0.14",
     "hedera-agent-kit": "^3.8.0",
     "jsonwebtoken": "^9.0.3",

@@ -987,13 +987,20 @@ export function updateJobStatus(
 
 export function getJobsByUser(userId: string): JobRecord[] {
   const stmt = db.prepare(
-    `SELECT j.* FROM jobs j
+    `SELECT DISTINCT j.* FROM jobs j
      INNER JOIN deployments d ON (j.client_agent_id = d.id OR j.provider_agent_id = d.id)
      WHERE d.user_id = ?
      ORDER BY j.created_at DESC`,
   )
   const rows = stmt.all(userId) as JobRow[]
   return rows.map(rowToJob)
+}
+
+export function clearJobsByUser(userId: string): void {
+  db.prepare(
+    `DELETE FROM jobs WHERE client_agent_id IN (SELECT id FROM deployments WHERE user_id = ?)
+     OR provider_agent_id IN (SELECT id FROM deployments WHERE user_id = ?)`,
+  ).run(userId, userId)
 }
 
 // ─── JSON Migration ──────────────────────────────────
