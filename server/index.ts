@@ -705,6 +705,99 @@ const toolExampleMap: Record<string, Record<string, unknown>> = {
   get_transaction_record_query_tool: {
     transactionId: `${config.operatorAccountId}@1234567890.000000000`,
   },
+
+  // ── SaucerSwap plugin ────────────────────────────
+  saucerswap_swap_tokens: {
+    fromToken: 'HBAR',
+    toToken: '0.0.456858',
+    amount: '10',
+    slippageTolerance: 0.5,
+  },
+  saucerswap_get_swap_quote: {
+    fromToken: 'HBAR',
+    toToken: '0.0.456858',
+    amount: '10',
+    slippageTolerance: 0.5,
+  },
+  saucerswap_get_pools: {
+    tokenA: 'HBAR',
+    tokenB: '0.0.456858',
+    version: 'v1',
+    limit: 10,
+  },
+  saucerswap_add_liquidity: {
+    tokenA: 'HBAR',
+    tokenB: '0.0.456858',
+    amountA: '10',
+    amountB: '50',
+    slippageTolerance: 0.5,
+  },
+  saucerswap_remove_liquidity: {
+    tokenA: 'HBAR',
+    tokenB: '0.0.456858',
+    lpTokenAmount: '100',
+    minAmountA: '5',
+    minAmountB: '25',
+  },
+  saucerswap_get_farms: {
+    poolId: 1,
+  },
+
+  // ── Pyth plugin ──────────────────────────────────
+  pyth_list_price_feeds: {
+    query: 'BTC',
+  },
+  pyth_get_latest_price: {
+    symbol: 'HBAR/USD',
+  },
+  pyth_get_latest_prices: {
+    symbols: ['BTC/USD', 'ETH/USD'],
+  },
+
+  // ── Memejob plugin ──────────────────────────────
+  create_memejob_token_tool: {
+    required: { name: 'MyCoin', symbol: 'MYCN', memo: 'ipfs://metadata' },
+    optional: { amount: 0, distributeRewards: true },
+  },
+  buy_memejob_token_tool: {
+    required: { tokenId: '0.0.1234', amount: 100 },
+    optional: { autoAssociate: true },
+  },
+  sell_memejob_token_tool: {
+    required: { tokenId: '0.0.1234', amount: 50 },
+    optional: { instant: true },
+  },
+
+  // ── Bonzo plugin ─────────────────────────────────
+  bonzo_market_data_tool: {},
+  approve_erc20_tool: {
+    required: { tokenSymbol: 'USDC', amount: '1000' },
+    optional: { useMax: false },
+  },
+  bonzo_deposit_tool: {
+    required: { tokenSymbol: 'USDC', amount: '100' },
+    optional: { referralCode: 0 },
+  },
+  bonzo_withdraw_tool: {
+    required: { tokenSymbol: 'USDC', amount: '50' },
+    optional: { withdrawAll: false },
+  },
+  bonzo_borrow_tool: {
+    required: { tokenSymbol: 'USDC', amount: '200', rateMode: 'variable' },
+    optional: { referralCode: 0 },
+  },
+  bonzo_repay_tool: {
+    required: { tokenSymbol: 'USDC', amount: '100', rateMode: 'variable' },
+    optional: { repayAll: false },
+  },
+
+  // ── CoinCap plugin ──────────────────────────────
+  get_hbar_price_in_USD_tool: {},
+
+  // ── Chainlink plugin ────────────────────────────
+  get_chainlink_price_feed_tool: {
+    coinId: 'HBAR',
+  },
 }
 
 const visualFormMap: Record<string, ToolFormDefinition> = {
@@ -1528,6 +1621,30 @@ const parseParameterHints = (description: string) => {
 const fallbackToolDescription = (toolName: string) =>
   `${titleCase(toolName)} is available in the current Hedera Agent Kit installation.`
 
+/** Enriched descriptions for plugin tools whose originals are too vague for OpenAI */
+const toolDescriptionOverrides: Record<string, string> = {
+  saucerswap_swap_tokens: 'Execute a token swap on SaucerSwap DEX. Params: fromToken (token ID or "HBAR"), toToken (token ID), amount (decimal string), slippageTolerance (number, default 0.5).',
+  saucerswap_get_swap_quote: 'Get a price quote for swapping tokens on SaucerSwap. Params: fromToken (token ID or "HBAR"), toToken (token ID), amount (decimal string), slippageTolerance (number, default 0.5).',
+  saucerswap_get_pools: 'Query SaucerSwap liquidity pools. Params: tokenA (token ID or symbol), tokenB (token ID or symbol), version ("v1" or "v2"), limit (number).',
+  saucerswap_add_liquidity: 'Add liquidity to a SaucerSwap pool. Params: tokenA, tokenB (token IDs), amountA, amountB (decimal strings), slippageTolerance (default 0.5).',
+  saucerswap_remove_liquidity: 'Remove liquidity from a SaucerSwap pool. Params: tokenA, tokenB (token IDs), lpTokenAmount, minAmountA, minAmountB (decimal strings).',
+  saucerswap_get_farms: 'Get active farming opportunities on SaucerSwap. Params: poolId (optional number to filter).',
+  pyth_list_price_feeds: 'List available Pyth price feeds. Params: query (string to filter by symbol, e.g. "BTC" or "HBAR").',
+  pyth_get_latest_price: 'Get the latest price from Pyth oracle for a given symbol. Params: symbol (e.g. "HBAR/USD", "BTC/USD") OR priceFeedId (hex string).',
+  pyth_get_latest_prices: 'Get latest prices from Pyth oracle for multiple symbols. Params: symbols (array of strings, e.g. ["BTC/USD","ETH/USD"]).',
+  create_memejob_token_tool: 'Create a new meme token on Memejob. Params: required { name, symbol, memo (IPFS path) }, optional { amount, distributeRewards }.',
+  buy_memejob_token_tool: 'Buy a meme token on Memejob. Params: required { tokenId (string), amount (number) }, optional { autoAssociate }.',
+  sell_memejob_token_tool: 'Sell a meme token on Memejob. Params: required { tokenId (string), amount (number) }, optional { instant }.',
+  bonzo_market_data_tool: 'Get Bonzo Finance lending market data and interest rates. No required params.',
+  approve_erc20_tool: 'Approve ERC-20 token spending on Bonzo. Params: required { tokenSymbol, amount }, optional { useMax }.',
+  bonzo_deposit_tool: 'Deposit tokens into Bonzo lending protocol. Params: required { tokenSymbol, amount }.',
+  bonzo_withdraw_tool: 'Withdraw tokens from Bonzo lending protocol. Params: required { tokenSymbol, amount }, optional { withdrawAll }.',
+  bonzo_borrow_tool: 'Borrow tokens from Bonzo lending protocol. Params: required { tokenSymbol, amount, rateMode ("variable" or "stable") }.',
+  bonzo_repay_tool: 'Repay borrowed tokens on Bonzo lending protocol. Params: required { tokenSymbol, amount, rateMode }, optional { repayAll }.',
+  get_hbar_price_in_USD_tool: 'Get the current HBAR price in USD from CoinCap API. No params required.',
+  get_chainlink_price_feed_tool: 'Get a price feed from Chainlink oracle on Hedera. Params: coinId (string, e.g. "HBAR", "BTC", "ETH", "LINK", "USDC", "USDT", "DAI").',
+}
+
 let toolCatalogCache: {
   groups: ToolCatalogGroup[]
   tools: ToolCatalogEntry[]
@@ -1562,9 +1679,9 @@ const buildToolCatalog = () => {
 
   const tools: ToolCatalogEntry[] = allToolNames.map((toolName) => {
     const runtimeTool = runtimeTools[toolName]
-    const description = String(runtimeTool?.description ?? fallbackToolDescription(toolName))
-      .replace(/\s+/g, ' ')
-      .trim()
+    const description = String(
+      toolDescriptionOverrides[toolName] ?? runtimeTool?.description ?? fallbackToolDescription(toolName),
+    ).replace(/\s+/g, ' ').trim()
 
     return {
       name: toolName,
