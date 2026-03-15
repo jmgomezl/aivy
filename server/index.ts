@@ -1833,6 +1833,13 @@ const fetchAllTopicMessages = async (topicId: string) => {
 const buildStats = (items?: DeploymentRecord[]) => {
   const deployments = items ?? db.getAllDeployments()
 
+  // Sum net balance (funded - spent) across all agents
+  let totalBalance = 0
+  for (const d of deployments) {
+    const s = db.getSpendingSummary(d.id)
+    totalBalance += s.totalFunded - s.totalSpent
+  }
+
   return {
     connectedAgents: deployments.length,
     safeVaults: deployments.filter((item) => item.vaultProtected).length,
@@ -1844,6 +1851,7 @@ const buildStats = (items?: DeploymentRecord[]) => {
         .reduce((sum, item) => sum + item.vaultCapHbar, 0)
         .toFixed(1),
     ),
+    totalBalance: Number(totalBalance.toFixed(1)),
   }
 }
 
@@ -3385,9 +3393,14 @@ app.get('/api/coordination', (_request, response) => {
 // Feature 5: Dashboard Stats Endpoint
 // ═══════════════════════════════════════════════════
 
-app.get('/api/dashboard', readLimiter, (_request, response) => {
+app.get('/api/dashboard', readLimiter, (request, response) => {
   try {
-    const items = db.getAllDeployments()
+    const userId = (request as AuthRequest).userId
+    const allItems = db.getAllDeployments()
+    // Filter by authenticated user — same as office view for consistency
+    const items = userId && userId !== 'demo' && userId !== 'anonymous'
+      ? allItems.filter((d) => d.userId === userId)
+      : allItems
 
     const agentStats = items.map(d => ({
       id: d.id,

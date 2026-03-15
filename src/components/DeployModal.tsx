@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from 'react'
-import type { CapabilityGroupId, LiveAgent, ToolCatalogResponse, WalletState } from '../types'
+import type { CapabilityGroupId, LiveAgent, ToolCatalogResponse } from '../types'
 import { templates, launchWizardByTemplate, toneClass } from '../data'
 import { deepClone, buildLaunchPayload } from '../utils'
+import { useWalletContext } from '../contexts/WalletContext'
 import './DeployModal.css'
 
 type DeployModalProps = {
@@ -14,8 +15,6 @@ type DeployModalProps = {
   operatorAccountId?: string | null
   mirrorNodeUrl?: string
   deployError?: string
-  wallet?: WalletState
-  onConnectWallet?: () => void
   onDeploy: (payload: {
     templateId: string
     name: string
@@ -43,11 +42,10 @@ export default function DeployModal({
   operatorAccountId,
   mirrorNodeUrl,
   deployError,
-  wallet,
-  onConnectWallet,
   onDeploy,
   onClose,
 }: DeployModalProps) {
+  const { wallet, connectWallet } = useWalletContext()
   const template = templates.find((t) => t.id === templateId) ?? templates[0]
   const wizard = launchWizardByTemplate[template.id]
 
@@ -81,7 +79,7 @@ export default function DeployModal({
   const [operatorBalance, setOperatorBalance] = useState<number | null>(null)
   const [userWalletBalance, setUserWalletBalance] = useState<number | null>(null)
 
-  const isWalletConnected = wallet?.status === 'connected'
+  const isWalletConnected = wallet.status === 'connected'
   const userAccountId = isWalletConnected ? wallet.accountId : null
 
   // Fetch operator balance from Mirror Node
@@ -250,15 +248,15 @@ export default function DeployModal({
                   <p>Connect your HashPack wallet to fund this agent from your account</p>
                   <button
                     className="dm-wallet-connect-btn"
-                    onClick={() => onConnectWallet?.()}
+                    onClick={() => void connectWallet()}
                     type="button"
-                    disabled={wallet?.status === 'connecting'}
+                    disabled={wallet.status === 'connecting'}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <rect x="2" y="4" width="20" height="16" rx="2" />
                       <path d="M22 10H18a2 2 0 000 4h4" />
                     </svg>
-                    {wallet?.status === 'connecting' ? 'Connecting...' : 'Connect HashPack'}
+                    {wallet.status === 'connecting' ? 'Connecting...' : 'Connect HashPack'}
                   </button>
                 </div>
               )}

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { LiveAgent, ToolCatalogResponse, ToolCatalogEntry, ToolWorkflow, ToolCatalogGroup, ActivityEvent, AgentSpendingResponse, WalletState } from '../types'
+import type { LiveAgent, ToolCatalogResponse, ToolCatalogEntry, ToolWorkflow, ToolCatalogGroup, ActivityEvent, AgentSpendingResponse } from '../types'
 import { statusMeta, toneClass, templates } from '../data'
 import { requestJson } from '../utils'
 import { useToast } from '../hooks/useToast'
+import { useWalletContext } from '../contexts/WalletContext'
 import ChatPanel from './ChatPanel'
 import ScheduleManager from './ScheduleManager'
 import TriggerManager from './TriggerManager'
@@ -25,8 +26,7 @@ type AgentPanelProps = {
   onAgentReply?: (agentId: string, message: string) => void
   onRefresh?: () => void
   onMarkActive?: (agentId: string) => void
-  wallet?: WalletState
-  onConnectWallet?: () => void
+  onFund?: () => void
 }
 
 export default function AgentPanel({
@@ -46,17 +46,15 @@ export default function AgentPanel({
   onAgentReply,
   onRefresh,
   onMarkActive,
-  wallet,
-  onConnectWallet,
+  onFund,
 }: AgentPanelProps) {
+  const { wallet, connectWallet, agentBalances } = useWalletContext()
   const [activeTab, setActiveTab] = useState<'info' | 'chat' | 'history' | 'spending' | 'automation'>(chatEnabled ? 'chat' : 'info')
   const [isExporting, setIsExporting] = useState(false)
   const [coordTarget, setCoordTarget] = useState('')
   const [coordMsg, setCoordMsg] = useState('')
   const [coordSending, setCoordSending] = useState(false)
   const [coordResult, setCoordResult] = useState<string | null>(null)
-  const [walletBalance, setWalletBalance] = useState<number | null>(null)
-  const [walletLoading, setWalletLoading] = useState(false)
   const [fundAmount, setFundAmount] = useState('')
   const [fundingInProgress, setFundingInProgress] = useState(false)
   const [fundResult, setFundResult] = useState<string | null>(null)
@@ -96,22 +94,8 @@ export default function AgentPanel({
     }
   }, [agent.id, activeTab])
 
-  // Fetch wallet balance on mount (always-on, not tab-gated) + refresh every 30s
-  useEffect(() => {
-    if (!agent.agentAccountId) return
-    const fetchBalance = () => {
-      setWalletLoading(true)
-      requestJson<{ walletType: string; agentAccountId: string | null; balance: number | null }>(
-        `/api/agents/${agent.id}/wallet`,
-      )
-        .then((res) => setWalletBalance(res.balance))
-        .catch((err) => { console.warn('[AgentPanel] Wallet fetch failed:', err); setWalletBalance(null) })
-        .finally(() => setWalletLoading(false))
-    }
-    fetchBalance()
-    const interval = setInterval(fetchBalance, 30_000)
-    return () => clearInterval(interval)
-  }, [agent.id, agent.agentAccountId])
+  // Read pre-fetched balance from context (populated by PhaserOffice batch-fetch)
+  const walletBalance = agent.agentAccountId ? agentBalances.get(agent.agentAccountId) ?? null : null
 
   const otherAgents = useMemo(
     () => allAgents.filter(a => a.id !== agent.id && a.status !== 'paused'),
@@ -182,7 +166,7 @@ export default function AgentPanel({
         body: JSON.stringify({
           amountHbar: amount,
           txId: transactionId,
-          funderAccountId: wallet?.status === 'connected' ? wallet.accountId : 'unknown',
+          funderAccountId: wallet.status === 'connected' ? wallet.accountId : 'unknown',
         }),
       })
       setFundResult(`Funded ${amount} HBAR!`)
@@ -198,7 +182,7 @@ export default function AgentPanel({
   const handleWithdraw = async () => {
     const amount = parseFloat(withdrawAmount)
     if (!amount || amount <= 0 || !agent.agentAccountId) return
-    if (wallet?.status !== 'connected') return
+    if (wallet.status !== 'connected') return
     setWithdrawInProgress(true)
     setWithdrawResult(null)
     try {
@@ -298,8 +282,18 @@ export default function AgentPanel({
                     rel="noopener noreferrer"
                     title="View on Hashscan"
                   >
-                    {walletLoading ? '...' : walletBalance !== null ? `${walletBalance} ℏ` : '--'}
+                    {walletBalance !== null ? `${walletBalance} ℏ` : '--'}
                   </a>
+                  {agent.walletType === 'dedicated' && onFund && (
+                    <button
+                      className="ap-fund-btn"
+                      onClick={onFund}
+                      type="button"
+                      title="Fund this agent"
+                    >
+                      Fund ℏ
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -454,13 +448,13 @@ export default function AgentPanel({
                     </button>
                   </div>
                   <span className="ap-wallet-balance">
-                    {walletLoading ? '...' : walletBalance !== null ? `${walletBalance} HBAR` : '--'}
+                    {walletBalance !== null ? `${walletBalance} HBAR` : '--'}
                   </span>
                 </div>
               )}
               {agent.walletType === 'dedicated' && agent.agentAccountId && (
                 <div className="ap-fund-form">
-                  {wallet?.status === 'connected' ? (
+                  {wallet.status === 'connected' ? (
                     <>
                       {/* ─── Fund Row ─── */}
                       <div className="ap-fund-row">
@@ -517,7 +511,7 @@ export default function AgentPanel({
                   ) : (
                     <button
                       className="ap-fund-btn"
-                      onClick={() => onConnectWallet?.()}
+                      onClick={() => void connectWallet()}
                       type="button"
                     >
                       Connect wallet to manage funds

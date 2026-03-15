@@ -1,15 +1,10 @@
-import type { WalletState } from '../types'
 import { isWalletConnectConfigured } from '../hooks/useWallet'
+import { useWalletContext } from '../contexts/WalletContext'
 import './TopBar.css'
 
 type TopBarProps = {
   networkLabel: string
   operatorAccountId: string | null
-  wallet: WalletState
-  sessionAccountId: string | null
-  onConnectWallet: () => void
-  onDisconnectWallet: () => void
-  onLogout: () => void
   theme: 'dark' | 'light'
   onToggleTheme: () => void
   activeView: 'office' | 'dashboard'
@@ -21,11 +16,6 @@ type TopBarProps = {
 export default function TopBar({
   networkLabel,
   operatorAccountId,
-  wallet,
-  sessionAccountId,
-  onConnectWallet,
-  onDisconnectWallet,
-  onLogout,
   theme,
   onToggleTheme,
   activeView,
@@ -33,6 +23,7 @@ export default function TopBar({
   onGoHome,
   demoMode,
 }: TopBarProps) {
+  const { wallet, connectWallet, disconnectWallet, sessionAccountId, logout } = useWalletContext()
   const isConnected = wallet.status === 'connected'
 
   return (
@@ -120,7 +111,7 @@ export default function TopBar({
             </span>
             <button
               className="wallet-disconnect-btn"
-              onClick={onDisconnectWallet}
+              onClick={() => void disconnectWallet()}
               type="button"
             >
               Disconnect
@@ -137,7 +128,7 @@ export default function TopBar({
             </span>
             <button
               className="wallet-connect-btn wallet-connect-btn--small"
-              onClick={onConnectWallet}
+              onClick={() => void connectWallet()}
               type="button"
               title="Reconnect wallet for signing transactions"
             >
@@ -148,7 +139,7 @@ export default function TopBar({
             </button>
             <button
               className="wallet-disconnect-btn"
-              onClick={onLogout}
+              onClick={logout}
               type="button"
             >
               Log out
@@ -157,7 +148,7 @@ export default function TopBar({
         ) : (
           <button
             className="wallet-connect-btn"
-            onClick={onConnectWallet}
+            onClick={() => void connectWallet()}
             type="button"
             disabled={!isWalletConnectConfigured}
           >

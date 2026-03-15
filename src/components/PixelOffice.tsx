@@ -70,8 +70,13 @@ export default function PixelOffice({
         </div>
         <div className="fstat-divider" />
         <div className="fstat">
-          <span>{stats.hbarSecured.toFixed(1)}</span>
-          <label>HBAR</label>
+          <span>{stats.totalBalance.toFixed(1)}</span>
+          <label>Balance</label>
+        </div>
+        <div className="fstat-divider" />
+        <div className="fstat">
+          <span>{stats.hbarSecured.toFixed(0)}</span>
+          <label>Vault Cap</label>
         </div>
       </div>
 

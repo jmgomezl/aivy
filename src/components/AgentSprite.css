@@ -41,6 +41,16 @@
   animation-delay: var(--bob-delay, 0s), 0s;
 }
 
+/* ─── Moving State (pause bob, add motion shadow) ─ */
+.agent-sprite-v2.is-moving {
+  animation-play-state: paused;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+.agent-sprite-v2.is-moving.is-working {
+  animation-play-state: paused;
+}
+
 /* ─── Paused State ─────────────────────────────── */
 .agent-sprite-v2.is-paused {
   opacity: 0.5;
@@ -50,13 +60,13 @@
 
 /* ─── Portrait ─────────────────────────────────── */
 .sprite-portrait {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.25);
   overflow: hidden;
 }
 
@@ -65,6 +75,22 @@
   height: 34px;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
+}
+
+/* ─── Static Pixel Sprite (single frame, no sheet animation) ── */
+.pixel-sprite {
+  width: 56px;
+  height: 56px;
+  margin: -6px;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.pixel-sprite-paused {
+  filter: grayscale(0.4);
 }
 
 /* ─── Labels ───────────────────────────────────── */
@@ -84,6 +110,41 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-weight: 600;
+}
+
+/* ─── Quick Fund Chip ─────────────────────────── */
+.sprite-fund-chip {
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(90, 214, 181, 0.35);
+  background: rgba(90, 214, 181, 0.08);
+  color: #5ad6b5;
+  font-family: 'VT323', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  animation: fund-chip-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.sprite-fund-chip:hover {
+  background: rgba(90, 214, 181, 0.18);
+  border-color: rgba(90, 214, 181, 0.55);
+}
+
+@keyframes fund-chip-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8) translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 /* ─── Sparkle Particles ────────────────────────── */
@@ -142,6 +203,120 @@
   border-top-color: rgba(90, 214, 181, 0.25);
 }
 
+/* Flip bubble below agent when near top of room */
+.speech-bubble.bubble-below {
+  bottom: auto;
+  top: calc(100% + 8px);
+  animation: bubble-pop-below 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.speech-bubble.bubble-below::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: rgba(90, 214, 181, 0.25);
+}
+
+@keyframes bubble-pop-below {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px) scale(0.9); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+
+/* ─── Hover Info Card ─────────────────────────── */
+.sprite-hover-card {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10, 17, 33, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(90, 214, 181, 0.2);
+  border-radius: 8px;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 12;
+  animation: hover-card-in 0.15s ease-out forwards;
+}
+
+.sprite-hover-card::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: rgba(90, 214, 181, 0.2);
+}
+
+.sprite-hover-card.hover-below {
+  bottom: auto;
+  top: calc(100% + 8px);
+  animation: hover-card-in-below 0.15s ease-out forwards;
+}
+
+.sprite-hover-card.hover-below::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: rgba(90, 214, 181, 0.2);
+}
+
+.hover-name {
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  color: #eef5ff;
+  line-height: 1.1;
+}
+
+.hover-address {
+  font-family: 'VT323', monospace;
+  font-size: 11px;
+  color: #8390ad;
+  line-height: 1.1;
+}
+
+.hover-address-copy {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 0.15s;
+}
+
+.hover-address-copy svg {
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.hover-address-copy:hover {
+  color: #5ad6b5;
+}
+
+.hover-address-copy:hover svg {
+  opacity: 1;
+}
+
+.hover-balance {
+  font-family: 'VT323', monospace;
+  font-size: 12px;
+  color: #f3c35f;
+  line-height: 1.1;
+}
+
+@keyframes hover-card-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+@keyframes hover-card-in-below {
+  from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
 /* ─── Executing State (activity overlay) ──────── */
 .agent-sprite-v2.is-executing {
   box-shadow: 0 0 24px color-mix(in srgb, var(--sprite-color, #61d6bf) 50%, transparent);
@@ -190,6 +365,11 @@
     height: 24px;
   }
 
+  .pixel-sprite {
+    width: 30px;
+    height: 30px;
+  }
+
   .sprite-name {
     font-size: 9px;
     max-width: 54px;
@@ -202,5 +382,10 @@
   .speech-bubble {
     font-size: 10px;
     padding: 3px 8px;
+  }
+
+  .sprite-fund-chip {
+    font-size: 8px;
+    padding: 1px 6px;
   }
 }

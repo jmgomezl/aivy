@@ -1,0 +1,335 @@
+/* ─── Fund Modal Overlay ──────────────────────── */
+.fund-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.fund-modal {
+  width: 360px;
+  max-width: 100%;
+  background: rgba(10, 17, 33, 0.98);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: fade-scale-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ─── Header ──────────────────────────────────── */
+.fm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fm-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.fm-portrait {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.fm-name {
+  font-family: 'VT323', monospace;
+  font-size: 20px;
+  color: #eef5ff;
+  margin: 0;
+  line-height: 1.1;
+}
+
+.fm-account-id {
+  font-family: 'VT323', monospace;
+  font-size: 12px;
+  color: #8390ad;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 0.15s;
+}
+
+.fm-account-id svg {
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.fm-account-id:hover {
+  color: #5ad6b5;
+}
+
+.fm-account-id:hover svg {
+  opacity: 1;
+}
+
+.fm-balance {
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+  color: #f3c35f;
+}
+
+.fm-close {
+  padding: 6px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #8390ad;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.fm-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #eef5ff;
+}
+
+/* ─── Agent Picker Strip ─────────────────────── */
+.fm-agent-picker {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 2px 0;
+  scrollbar-width: none;
+}
+
+.fm-agent-picker::-webkit-scrollbar {
+  display: none;
+}
+
+.fm-agent-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px 5px 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  color: #6b7a99;
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.fm-agent-chip:hover {
+  border-color: rgba(90, 214, 181, 0.2);
+  background: rgba(90, 214, 181, 0.04);
+  color: #b8c6e4;
+}
+
+.fm-agent-chip.is-current {
+  border-color: rgba(90, 214, 181, 0.4);
+  background: rgba(90, 214, 181, 0.1);
+  color: #5ad6b5;
+}
+
+.fm-agent-chip-name {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+  gap: 2px;
+}
+
+.fm-agent-chip-bal {
+  font-size: 10px;
+  color: #f3c35f;
+  opacity: 0.85;
+}
+
+.fm-agent-glyph {
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* ─── Preset Chips ────────────────────────────── */
+.fm-presets {
+  display: flex;
+  gap: 6px;
+}
+
+.fm-preset {
+  flex: 1;
+  padding: 8px 4px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: #b8c6e4;
+  font-family: 'VT323', monospace;
+  font-size: 15px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+
+.fm-preset:hover:not(:disabled) {
+  border-color: rgba(90, 214, 181, 0.3);
+  background: rgba(90, 214, 181, 0.06);
+  color: #eef5ff;
+}
+
+.fm-preset.is-active {
+  border-color: rgba(90, 214, 181, 0.5);
+  background: rgba(90, 214, 181, 0.15);
+  color: #5ad6b5;
+}
+
+.fm-preset:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── Custom Input ────────────────────────────── */
+.fm-custom {
+  overflow: hidden;
+  animation: fm-slide-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.fm-custom-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: #eef5ff;
+  font-size: 15px;
+  font-family: 'VT323', monospace;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.fm-custom-input:focus {
+  border-color: rgba(90, 214, 181, 0.4);
+}
+
+.fm-custom-input::placeholder {
+  color: #5a6888;
+}
+
+@keyframes fm-slide-in {
+  0% { max-height: 0; opacity: 0; transform: translateY(-6px); }
+  100% { max-height: 80px; opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Result Feedback ─────────────────────────── */
+.fm-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Space Grotesk', sans-serif;
+  animation: fade-scale-in 0.2s ease-out;
+}
+
+.fm-result.success {
+  background: rgba(90, 214, 181, 0.1);
+  border: 1px solid rgba(90, 214, 181, 0.25);
+  color: #5ad6b5;
+}
+
+.fm-result.error {
+  background: rgba(242, 95, 92, 0.1);
+  border: 1px solid rgba(242, 95, 92, 0.25);
+  color: #f25f5c;
+}
+
+/* ─── Action Buttons ──────────────────────────── */
+.fm-actions {
+  display: flex;
+}
+
+.fm-fund-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 20px;
+  border-radius: 10px;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: 'Space Grotesk', sans-serif;
+  color: #08111d;
+  background: linear-gradient(135deg, #5ad6b5, #f3c35f);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.fm-fund-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.fm-fund-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.fm-connect-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 20px;
+  border-radius: 10px;
+  border: 1px solid rgba(90, 214, 181, 0.35);
+  background: rgba(90, 214, 181, 0.1);
+  color: #5ad6b5;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: 'Space Grotesk', sans-serif;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.fm-connect-btn:hover:not(:disabled) {
+  background: rgba(90, 214, 181, 0.18);
+  border-color: rgba(90, 214, 181, 0.5);
+}
+
+.fm-connect-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ─── Mobile ──────────────────────────────────── */
+@media (max-width: 480px) {
+  .fund-modal {
+    width: 100%;
+    border-radius: 16px;
+    padding: 16px;
+  }
+
+  .fm-preset {
+    font-size: 13px;
+    padding: 6px 2px;
+  }
+}

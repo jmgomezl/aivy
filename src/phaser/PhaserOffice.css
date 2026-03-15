@@ -1,0 +1,363 @@
+/* ─── Phaser Office Wrapper ──────────────────────── */
+.office-wrapper {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  animation: view-enter 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.phaser-canvas-container {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+  border-radius: 16px;
+  margin: 0 12px;
+  overflow: hidden;
+  background: var(--bg-office, linear-gradient(145deg, #0a0f1e 0%, #111827 50%, #0a0f1e 100%));
+}
+
+/* Canvas sits at the bottom layer as pure background */
+.phaser-canvas-container canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 16px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Agent sprites (React) sit on top of the Phaser canvas */
+.phaser-canvas-container .agent-sprite-v2 {
+  z-index: 2;
+}
+.phaser-canvas-container .agent-sprite-v2.is-selected {
+  z-index: 3;
+}
+
+/* ─── Coordination Lines (SVG overlay) ───────────── */
+.coord-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.coord-line-anim {
+  animation: coord-dash 2s linear infinite, coord-fade-in 0.5s ease-out forwards;
+  transition: opacity 1s ease-out;
+  opacity: 0.75;
+}
+
+.coord-line-anim.coord-line-fading {
+  opacity: 0;
+}
+
+@keyframes coord-dash {
+  to { stroke-dashoffset: -4.6; }
+}
+
+@keyframes coord-fade-in {
+  from { opacity: 0; }
+  to { opacity: 0.75; }
+}
+
+/* Door handshake pulse — glowing circle at the door during coordination */
+.coord-pulse {
+  animation: door-pulse 1.5s ease-out infinite;
+}
+
+@keyframes door-pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 0.15; }
+  100% { opacity: 0.6; }
+}
+
+@keyframes fab-breathe {
+  0%, 100% { box-shadow: 0 4px 20px rgba(90, 214, 181, 0.2); }
+  50% { box-shadow: 0 4px 30px rgba(90, 214, 181, 0.4); }
+}
+
+/* ─── Floating Stats (React overlay) ──────────────── */
+.floating-stats {
+  position: absolute;
+  top: 8px;
+  right: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 14px;
+  border-radius: 16px;
+  background: rgba(10, 15, 30, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.fstat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.fstat span {
+  font-family: 'VT323', monospace;
+  font-size: 18px;
+  color: #eef5ff;
+}
+
+.fstat label {
+  font-size: 9px;
+  color: #5a6888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.fstat-divider {
+  width: 1px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ─── Sound Toggle ────────────────────────────────── */
+.sound-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #5a6888;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.sound-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #8390ad;
+}
+
+.sound-toggle.sound-on {
+  color: #5ad6b5;
+}
+
+.sound-toggle.sound-on:hover {
+  color: #7de6cb;
+  background: rgba(90, 214, 181, 0.1);
+}
+
+/* ─── Empty State (React overlay) ─────────────────── */
+.office-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  z-index: 5;
+  animation: fade-scale-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 20px;
+  background: rgba(90, 214, 181, 0.08);
+  border: 1px solid rgba(90, 214, 181, 0.15);
+  color: var(--color-accent, #5ad6b5);
+  margin-bottom: 16px;
+  animation: empty-icon-pulse 3s ease-in-out infinite;
+}
+
+@keyframes empty-icon-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(90, 214, 181, 0.2);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 30px 8px rgba(90, 214, 181, 0.15);
+    transform: scale(1.05);
+  }
+}
+
+@keyframes fade-scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.office-empty h3 {
+  font-family: 'VT323', monospace;
+  font-size: 26px;
+  color: var(--color-text, #eef5ff);
+  margin-bottom: 8px;
+}
+
+.office-empty p {
+  font-size: 14px;
+  color: var(--color-muted, #5a6888);
+  max-width: 300px;
+  margin: 0 auto 20px;
+  line-height: 1.5;
+}
+
+.empty-deploy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: 12px;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: 'Space Grotesk', sans-serif;
+  color: #08111d;
+  background: linear-gradient(135deg, #5ad6b5, #f3c35f);
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  animation: empty-btn-pulse 2.5s ease-in-out infinite;
+}
+
+.empty-deploy-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 30px rgba(90, 214, 181, 0.4);
+}
+
+@keyframes empty-btn-pulse {
+  0%, 100% { box-shadow: 0 4px 20px rgba(90, 214, 181, 0.25); }
+  50% { box-shadow: 0 4px 30px rgba(90, 214, 181, 0.5); }
+}
+
+.empty-hint {
+  display: block;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--color-muted, #5a6888);
+}
+
+.empty-hint kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+  color: var(--color-accent, #5ad6b5);
+}
+
+/* ─── Deploy FAB (React overlay) ──────────────────── */
+.deploy-fab-group {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  z-index: 20;
+}
+
+.deploy-fab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 22px;
+  border-radius: 14px;
+  border: none;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: 'Space Grotesk', sans-serif;
+  color: #08111d;
+  background: linear-gradient(135deg, #5ad6b5, #f3c35f);
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  animation: fab-breathe 3s ease-in-out infinite;
+}
+
+.deploy-fab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 30px rgba(90, 214, 181, 0.4);
+}
+
+.deploy-fab-group:hover .fab-dropdown,
+.fab-dropdown:hover {
+  opacity: 1;
+  pointer-events: all;
+  transform: translateY(0);
+}
+
+.fab-dropdown {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  min-width: 200px;
+  padding: 6px 6px 12px;
+  border-radius: 12px;
+  background: rgba(14, 22, 40, 0.95);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity 0.2s, transform 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fab-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #eef5ff;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+  text-align: left;
+}
+
+.fab-option:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ─── Responsive ──────────────────────────────────── */
+@media (max-width: 768px) {
+  .floating-stats {
+    padding: 4px 12px;
+    gap: 6px;
+  }
+
+  .fstat span {
+    font-size: 14px;
+  }
+
+  .deploy-fab-group {
+    bottom: 16px;
+    right: 16px;
+  }
+
+  .deploy-fab {
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+
+  .fab-dropdown {
+    min-width: 170px;
+  }
+}
