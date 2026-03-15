@@ -2688,6 +2688,14 @@ app.delete('/api/agents/:agentId', requireAuth, (request, response) => {
   response.status(204).end()
 })
 
+app.delete('/api/agents/:agentId/chat', requireAuth, (request, response) => {
+  const deployment = db.getDeployment(request.params.agentId)
+  if (!deployment) { response.status(404).json({ error: 'Deployment not found.' }); return }
+  if (!assertAgentOwnership(deployment, request)) { response.status(403).json({ error: 'You do not own this agent.' }); return }
+  db.clearChatHistory(request.params.agentId)
+  response.json({ ok: true })
+})
+
 // ─── Export Audit Report ──────────────────────────────
 app.get('/api/agents/:agentId/export-audit', requireAuth, readLimiter, async (request, response) => {
   const deployment = db.getDeployment(request.params.agentId)
