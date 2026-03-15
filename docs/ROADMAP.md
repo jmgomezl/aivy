@@ -1,56 +1,68 @@
-# Hackathon Launch
+# Roadmap
 
-## Phase 0: framing
+## Phase 0: Framing (Complete)
 
-Goal: validate the story and tighten scope.
-
-Deliverables:
-
-- name and narrative,
-- vault-first product stance,
-- 3-5 agent templates,
-- demo script,
-- UI prototype.
-
-## Phase 1: hackathon MVP
-
-Goal: show a working end-to-end path.
+Goal: Validate the story and tighten scope.
 
 Deliverables:
 
-1. Pixel office frontend with deploy flow.
-2. Template registry in code.
-3. Control plane endpoint that accepts a deployment request.
-4. One agent runner integrated with Hedera Agent Kit.
-5. One OculusVault-backed execution contract or mocked equivalent if contract delivery is too risky.
-6. Mirror node or transaction feed shown inside the office.
+- Name and narrative (Aivy — AI Agents on Hedera).
+- Vault-first product stance with AivyVault Solidity contract.
+- 4 agent templates (Treasury, Yield, Compliance, Governance).
+- Demo script with real Hedera testnet deployment.
+- Pixel office UI with animated sprites.
+
+## Phase 1: Hackathon MVP (Complete)
+
+Goal: Show a working end-to-end path on Hedera testnet.
+
+Deliverables:
+
+1. Pixel office frontend with themed rooms, animated sprites, and live activity feed.
+2. Template registry with 4 agent types and capability-based tool access.
+3. Real agent deployment with dedicated Hedera accounts and encrypted keys.
+4. AivyVault contract deployment on Hedera EVM with spending cap enforcement.
+5. AI chat with 50+ Hedera Agent Kit tools via GPT-4o function calling.
+6. Quick-fund flow with HashPack wallet integration and preset amounts.
+7. Autonomous execution via cron schedules and Mirror Node event triggers.
+8. Balance monitoring with batch pre-fetching and 30s auto-refresh.
+9. Landing page with vault architecture showcase.
+10. 140+ unit tests with 96% coverage.
+11. Production deployment at https://aivylabs.xyz.
 
 Success criteria:
 
-- a user deploys from the UI,
-- the agent appears in the office,
-- the agent emits live activity,
-- one Hedera-backed action is visible,
-- the vault narrative is clear and concrete.
+- A user deploys agents from the UI on Hedera testnet.
+- Agents appear in the pixel office with live status and speech bubbles.
+- Real HBAR funding via HashPack with on-chain transaction confirmation.
+- AivyVault contracts deployed and enforcing spending caps on-chain.
+- AI chat routes to correct Hedera tools and returns real transaction results.
+- Mirror Node events trigger autonomous agent execution.
 
-## Phase 2: post-hackathon productization
+## Phase 2: Post-hackathon productization
 
-Goal: move from demo to reusable builder product.
+Goal: Move from demo to reusable builder product.
 
 Deliverables:
 
-1. Authentication and team workspaces.
-2. Saved projects and environments.
-3. Template versioning.
-4. Managed runtime orchestration.
-5. Live logs, traces, and run history.
-6. Vault policy editor with presets.
+1. Team workspaces with multi-user collaboration.
+2. Saved projects and persistent environments.
+3. Template versioning and custom template creation.
+4. Vault policy editor with presets and custom rules.
+5. Live logs, traces, and execution history.
+6. Agent-to-agent coordination protocols.
+7. WebSocket-based real-time updates (replace polling).
+8. Mainnet support alongside testnet.
 
-## Recommended next engineering tasks
+## Phase 3: Managed cloud
 
-1. Move the current Vite app into `apps/web`.
-2. Stand up a small Node control plane with deployment and event endpoints.
-3. Implement one real demo template first, preferably treasury or compliance, because the vault story is strongest there.
-4. Define the vault contract interface and the minimum policy schema.
-5. Decide how the runner requests execution from the vault.
-6. Wire mirror node events back into the office UI.
+Goal: Offer a fully managed agent deployment platform.
+
+Deliverables:
+
+1. Managed deployment tier with one-click provisioning.
+2. Billing, quotas, and usage metering.
+3. Template marketplace for community-contributed agents.
+4. Multi-tenant vault and policy management.
+5. Production observability, alerting, and incident controls.
+6. SDK/API for programmatic agent management.
