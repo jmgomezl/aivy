@@ -9,15 +9,25 @@ import OpenAI from 'openai'
 import {
   AgentMode,
   HederaAIToolkit,
+  coreAccountPlugin,
   coreAccountPluginToolNames,
+  coreAccountQueryPlugin,
   coreAccountQueryPluginToolNames,
+  coreConsensusPlugin,
   coreConsensusPluginToolNames,
+  coreConsensusQueryPlugin,
   coreConsensusQueryPluginToolNames,
+  coreEVMPlugin,
   coreEVMPluginToolNames,
+  coreEVMQueryPlugin,
   coreEVMQueryPluginToolNames,
+  coreMiscQueriesPlugin,
   coreMiscQueriesPluginsToolNames,
+  coreTokenPlugin,
   coreTokenPluginToolNames,
+  coreTokenQueryPlugin,
   coreTokenQueryPluginToolNames,
+  coreTransactionQueryPlugin,
   coreTransactionQueryPluginToolNames,
 } from 'hedera-agent-kit'
 import {
@@ -43,6 +53,73 @@ import { saucerswapPlugin } from 'hak-saucerswap-plugin'
 import { pythPlugin } from 'hak-pyth-plugin'
 import { memejobPlugin } from '@buidlerlabs/hak-memejob-plugin'
 import { bonzoPlugin } from '@bonzofinancelabs/hak-bonzo-plugin'
+// coincap-hedera-plugin & chainlink-pricefeed-plugin have broken ESM packaging
+// (they use `import` syntax in .js files without "type": "module").
+// We inline lightweight plugin wrappers that replicate their tool logic directly.
+import { ethers } from 'ethers'
+
+const CoinCapHederaPlugin = {
+  name: 'CoinCapHederaPlugin',
+  version: '1.0.1',
+  description: 'Get the current HBAR price in USD via CoinCap API.',
+  tools: () => [{
+    method: 'get_hbar_price_in_USD_tool',
+    name: 'get HBAR price in USD Tool',
+    description: 'Get the current HBAR price in USD from CoinCap API. No parameters required.',
+    parameters: z.object({}),
+    execute: async () => {
+      const res = await fetch('https://rest.coincap.io/v3/price/bysymbol/hbar', {
+        headers: {
+          Authorization: `Bearer ${process.env.COINCAP_BEARER_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+      })
+      if (!res.ok) throw new Error(`CoinCap HTTP ${res.status}`)
+      const json = (await res.json()) as { data: string[] }
+      const price = Number(json.data[0])
+      return { humanMessage: `Current HBAR price: $${price.toFixed(4)} USD`, raw: { price } }
+    },
+  }],
+}
+
+const CHAINLINK_FEEDS: Record<string, string> = {
+  BTC: '0x058fe79cb5775d4b167920ca6036b824805a9abd',
+  ETH: '0xb9d461e0b962af219866adfa7dd19c52bb9871b9',
+  HBAR: '0x59bc155eb6c6c415fe43255af66ecf0523c92b4a',
+  LINK: '0xeb93a53c648e3e89bc0fc327d36a37619b1cf0cd',
+  USDC: '0x2946220288dbaec91a26c772f5a1bb7b191c1a73',
+  USDT: '0x1c5275a77d74c89256801322e9a52a991c68e79b',
+  DAI: '0xb7546c6ebfc0b6b4fe68909734d7e2c1c5a3ffdf',
+}
+const AGGREGATOR_ABI = [
+  'function latestRoundData() view returns (uint80,int256,uint256,uint256,uint80)',
+  'function decimals() view returns (uint8)',
+]
+
+const ChainlinkPriceFeedPlugin = {
+  name: 'ChainlinkPriceFeedPlugin',
+  version: '1.0.0',
+  description: 'Query Chainlink Price Feed oracles on Hedera Testnet.',
+  tools: () => [{
+    method: 'get_chainlink_price_feed_tool',
+    name: 'get Chainlink price feed Tool',
+    description: 'Get a price feed from a Chainlink oracle on Hedera Testnet. Params: coinId (BTC, ETH, HBAR, LINK, USDC, USDT, DAI).',
+    parameters: z.object({ coinId: z.string() }),
+    execute: async (_client: unknown, _context: unknown, params: { coinId: string }) => {
+      const addr = CHAINLINK_FEEDS[params.coinId]
+      if (!addr) throw new Error(`Unknown coinId: ${params.coinId}. Supported: ${Object.keys(CHAINLINK_FEEDS).join(', ')}`)
+      const provider = new ethers.JsonRpcProvider('https://testnet.hashio.io/api')
+      const contract = new ethers.Contract(addr, AGGREGATOR_ABI, provider)
+      const [roundId, answer, , updatedAt] = await contract.latestRoundData()
+      const decimals = await contract.decimals()
+      const price = Number(answer) / Math.pow(10, Number(decimals))
+      return {
+        humanMessage: `${params.coinId}/USD: $${price.toFixed(Number(decimals))}`,
+        raw: { coinId: params.coinId, contractAddress: addr, price: price.toString(), decimals: Number(decimals), roundId: roundId.toString(), updatedAt: new Date(Number(updatedAt) * 1000).toISOString() },
+      }
+    },
+  }],
+}
 
 dotenv.config()
 initMasterKey()
@@ -1663,6 +1740,26 @@ const getToolkit = (tools = allToolNames, agentClient?: Client) => {
     client: c,
     configuration: {
       tools,
+      // When custom plugins are registered, PluginRegistry skips core plugins,
+      // so we must explicitly include every core plugin alongside third-party ones.
+      plugins: [
+        coreAccountPlugin,
+        coreAccountQueryPlugin,
+        coreConsensusPlugin,
+        coreConsensusQueryPlugin,
+        coreEVMPlugin,
+        coreEVMQueryPlugin,
+        coreMiscQueriesPlugin,
+        coreTokenPlugin,
+        coreTokenQueryPlugin,
+        coreTransactionQueryPlugin,
+        saucerswapPlugin,
+        pythPlugin,
+        memejobPlugin,
+        bonzoPlugin,
+        CoinCapHederaPlugin,
+        ChainlinkPriceFeedPlugin,
+      ],
       context: {
         mode: AgentMode.AUTONOMOUS,
       },
