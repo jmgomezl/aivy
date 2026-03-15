@@ -88,6 +88,8 @@ const capabilityGroupIds = [
 ] as const
 
 // Third-party plugin tool names
+// OpenAI requires function names to match ^[a-zA-Z0-9_-]+$ — we sanitise in buildOpenAITools
+const sanitizeToolName = (n: string) => n.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '')
 const saucerswapTools = saucerswapPlugin.tools().map((t: { name: string }) => t.name)
 const pythTools = pythPlugin.tools().map((t: { name: string }) => t.name)
 const memejobTools = memejobPlugin.tools().map((t: { method: string }) => t.method)
@@ -384,7 +386,7 @@ function buildOpenAITools(agentTools: ToolCatalogEntry[], userAccountId?: string
     return {
       type: 'function' as const,
       function: {
-        name: tool.name,
+        name: sanitizeToolName(tool.name),
         description: tool.description.slice(0, 1024),
         parameters: {
           type: 'object',
@@ -2873,7 +2875,9 @@ async function runChatLoop(
   const enabledGroups = new Set(deployment.capabilityGroups)
   const agentTools = catalog.tools.filter((t) => enabledGroups.has(t.groupId))
   const openaiTools = buildOpenAITools(agentTools)
-  const agentToolNames = new Set(agentTools.map((t) => t.name))
+  // Map sanitised OpenAI names back to original plugin names for executeTool
+  const sanitizedToOriginal = new Map(agentTools.map((t) => [sanitizeToolName(t.name), t.name]))
+  const agentToolNames = new Set(sanitizedToOriginal.keys())
 
   const collectedToolCalls: ChatLoopResult['toolCalls'] = []
   const collectedReferences: ResultReference[] = []
@@ -2916,6 +2920,7 @@ async function runChatLoop(
 
     for (const toolCall of fnToolCalls) {
       const fnName = toolCall.function.name
+      const originalFnName = sanitizedToOriginal.get(fnName) ?? fnName
       let fnArgs: Record<string, unknown> = {}
       try { fnArgs = JSON.parse(toolCall.function.arguments) as Record<string, unknown> } catch { /* empty */ }
 
@@ -2927,7 +2932,7 @@ async function runChatLoop(
       } else {
         // Programmatic spending cap check BEFORE executing the tool
         if (deployment.vaultProtected && deployment.vaultCapHbar > 0) {
-          const projectedSpend = detectSpendingAmount(fnName, fnArgs)
+          const projectedSpend = detectSpendingAmount(originalFnName, fnArgs)
           if (projectedSpend > 0) {
             const summary = db.getSpendingSummary(deployment.id)
             const totalAfter = summary.totalSpent + projectedSpend
@@ -2943,31 +2948,31 @@ async function runChatLoop(
         }
         try {
           const result = demoMode
-            ? getDemoToolResponse(fnName, fnArgs)
-            : await executeTool(fnName, fnArgs, agentClient)
+            ? getDemoToolResponse(originalFnName, fnArgs)
+            : await executeTool(originalFnName, fnArgs, agentClient)
           const references = extractResultReferences(result.raw)
-          collectedToolCalls.push({ toolName: fnName, params: fnArgs, result })
+          collectedToolCalls.push({ toolName: originalFnName, params: fnArgs, result })
           collectedReferences.push(...references)
 
-          const spendingAmount = detectSpendingAmount(fnName, fnArgs)
+          const spendingAmount = detectSpendingAmount(originalFnName, fnArgs)
           if (spendingAmount > 0) {
             const txId = typeof result.raw?.transactionId === 'string' ? result.raw.transactionId : null
-            db.recordSpending(deployment.id, spendingAmount, 'outflow', fnName, txId, source, result.humanMessage ?? null)
+            db.recordSpending(deployment.id, spendingAmount, 'outflow', originalFnName, txId, source, result.humanMessage ?? null)
           }
 
           if (result.raw) runCoordinationChecks(deployment, { ...result.raw, humanMessage: result.humanMessage })
 
-          const groupId = toolNameToGroup.get(fnName)
+          const groupId = toolNameToGroup.get(originalFnName)
           const isQuery = groupId ? queryGroupIds.has(groupId) : true
           if (!isQuery) {
             deployment.executions += 1
             deployment.status = deployment.vaultProtected ? 'guarded' : 'active'
-            deployment.lastAction = titleCase(fnName)
+            deployment.lastAction = titleCase(originalFnName)
             db.updateDeployment(deployment)
           }
 
           pushActivity(
-            `${deployment.name} (${source}): ${result.humanMessage ?? titleCase(fnName)}`,
+            `${deployment.name} (${source}): ${result.humanMessage ?? titleCase(originalFnName)}`,
             isQuery ? 'system' : deployment.vaultProtected ? 'vault' : 'success',
           )
 
@@ -3182,7 +3187,8 @@ app.post('/api/chat/route', requireAuth, chatLimiter, async (request, response) 
     const enabledGroups = new Set(deployment.capabilityGroups)
     const agentTools = catalog.tools.filter((t) => enabledGroups.has(t.groupId))
     const openaiTools = buildOpenAITools(agentTools, userAccountId)
-    const agentToolNames = new Set(agentTools.map((t) => t.name))
+    const sanitizedToOriginal2 = new Map(agentTools.map((t) => [sanitizeToolName(t.name), t.name]))
+    const agentToolNames = new Set(sanitizedToOriginal2.keys())
 
     history.push({ role: 'user', content: message })
 
@@ -3224,6 +3230,7 @@ app.post('/api/chat/route', requireAuth, chatLimiter, async (request, response) 
 
       for (const toolCall of fnToolCalls2) {
         const fnName = toolCall.function.name
+        const originalFnName2 = sanitizedToOriginal2.get(fnName) ?? fnName
         let fnArgs: Record<string, unknown> = {}
         try { fnArgs = JSON.parse(toolCall.function.arguments) as Record<string, unknown> } catch { /* empty */ }
 
@@ -3234,8 +3241,8 @@ app.post('/api/chat/route', requireAuth, chatLimiter, async (request, response) 
         } else {
           try {
             const result = demoMode
-              ? getDemoToolResponse(fnName, fnArgs)
-              : await executeTool(fnName, fnArgs, routeAgentClient)
+              ? getDemoToolResponse(originalFnName2, fnArgs)
+              : await executeTool(originalFnName2, fnArgs, routeAgentClient)
             collectedToolCalls.push({ toolName: fnName, params: fnArgs, result })
 
             // Feature 4: Agent-to-agent coordination checks
@@ -3243,17 +3250,17 @@ app.post('/api/chat/route', requireAuth, chatLimiter, async (request, response) 
               runCoordinationChecks(deployment, { ...result.raw, humanMessage: result.humanMessage })
             }
 
-            const groupId = toolNameToGroup.get(fnName)
+            const groupId = toolNameToGroup.get(originalFnName2)
             const isQuery = groupId ? queryGroupIds.has(groupId) : true
             if (!isQuery) {
               deployment.executions += 1
               deployment.status = deployment.vaultProtected ? 'guarded' : 'active'
-              deployment.lastAction = titleCase(fnName)
+              deployment.lastAction = titleCase(originalFnName2)
               db.updateDeployment(deployment)
             }
 
             pushActivity(
-              `${deployment.name} (routed): ${result.humanMessage ?? titleCase(fnName)}`,
+              `${deployment.name} (routed): ${result.humanMessage ?? titleCase(originalFnName2)}`,
               isQuery ? 'system' : deployment.vaultProtected ? 'vault' : 'success',
             )
 
