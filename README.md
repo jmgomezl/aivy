@@ -12,7 +12,8 @@
 <p align="center">
   <a href="https://aivylabs.xyz">Live Demo</a> &bull;
   <a href="docs/ARCHITECTURE.md">Architecture</a> &bull;
-  <a href="docs/PRODUCT_BRIEF.md">Product Brief</a>
+  <a href="docs/PRODUCT_BRIEF.md">Product Brief</a> &bull;
+  <a href="contracts/AivyVault.sol">Smart Contract</a>
 </p>
 
 ---
@@ -27,7 +28,7 @@ Aivy solves this by providing a **ready-to-use platform where AI agents are firs
 
 - **Any LLM can operate on Hedera** — Agents use 50+ tools from the Hedera Agent Kit via natural language. No SDK knowledge required.
 - **Agents run autonomously, not just on user prompts** — Cron schedules and on-chain event triggers let agents act on their own (e.g., "rebalance treasury weekly", "respond to incoming HBAR transfers").
-- **On-chain guardrails, not just promises** — Every agent deploys with an AivyVault Solidity contract that enforces spending caps at the EVM level. The AI literally cannot overspend.
+- **On-chain guardrails, not just promises** — Every agent deploys with an [AivyVault](contracts/AivyVault.sol) Solidity contract that enforces spending caps at the EVM level. The AI literally cannot overspend.
 - **Real wallet isolation** — Each agent gets its own Hedera account with an encrypted private key. No shared operator key risk.
 - **Hedera-native event system** — Agents react to HBAR transfers, HCS topic messages, and token movements by polling the Mirror Node in real-time.
 
@@ -53,18 +54,22 @@ Agents are granted **capability groups**, not individual tools — so a read-onl
 
 ### AivyVault — On-Chain Spending Guardrails
 
-Every vault-protected agent deploys a Solidity smart contract on Hedera:
+Every vault-protected agent deploys an [`AivyVault.sol`](contracts/AivyVault.sol) smart contract on Hedera:
 
 ```solidity
-// Simplified — enforces per-agent spending caps at the EVM level
-function logExecution(string action, uint256 amountTinybar, ...) external {
+// Enforces per-agent spending caps at the EVM level
+function logExecution(string action, uint256 amountTinybar, ...) external onlyOwner {
     require(!paused, "vault paused");
     require(amountTinybar <= spendingCapTinybar, "cap exceeded");
     emit ExecutionLogged(action, amountTinybar, targetAccountId, note);
 }
 ```
 
-This means spending limits are enforced **on-chain**, not just in application code. Even if the AI hallucinates a large transfer, the vault contract blocks it.
+This means spending limits are enforced **on-chain**, not just in application code. Even if the AI hallucinates a large transfer, the vault contract blocks it. The contract also supports:
+
+- **Guardrail updates** — Owner can adjust spending caps and pause state
+- **Provisioning events** — `VaultProvisioned` emitted on deployment for audit trail
+- **Receive fallback** — Contract can hold HBAR for agent operations
 
 ### Mirror Node Event Polling
 
@@ -80,17 +85,17 @@ When an event matches a trigger, Aivy fills a prompt template with event data (`
 
 Users connect their HashPack wallet via WalletConnect/HashConnect v3 to:
 
-- **Fund agent accounts** — Direct HBAR transfer from user wallet to agent's dedicated Hedera account
+- **Fund agent accounts** — Direct HBAR transfer from user wallet to agent's dedicated Hedera account via quick-fund presets (1/5/10/25 HBAR)
 - **Authenticate** — Challenge-response flow: server issues a challenge, user signs with their Hedera key, server verifies via Mirror Node
-- **Track spending** — See exactly how much HBAR each agent has spent, funded, and its remaining runway
+- **Track spending** — Real-time balance monitoring via Mirror Node with 30-second auto-refresh
 
 ---
 
 ## Screenshots
 
-| Office View |
-|:-----------:|
-| ![Office](docs/screenshots/office.png) |
+| Pixel Office | Agent Detail |
+|:------------:|:------------:|
+| ![Office](docs/screenshots/office.png) | ![Landing](docs/screenshots/landing.png) |
 
 ---
 
@@ -98,16 +103,20 @@ Users connect their HashPack wallet via WalletConnect/HashConnect v3 to:
 
 | Feature | Description |
 |---------|-------------|
+| **Pixel Office** | Visual workspace with animated pixel sprites, themed rooms, and live agent movement |
+| **Quick Fund** | Fund agents in 2 clicks — select agent, pick preset amount, sign in wallet |
 | **Autonomous Schedules** | Cron-based execution — "check balance every hour", "rebalance weekly" |
 | **Event Triggers** | React to HBAR inflows, HCS messages, token transfers via Mirror Node |
 | **Real Funding Flow** | Transfer HBAR from HashPack directly to agent accounts |
 | **Spending Analytics** | Per-agent HBAR tracking, burn rate, estimated runway |
-| **Vault Guardrails** | Solidity contracts enforce spending caps on-chain |
+| **Vault Guardrails** | [AivyVault.sol](contracts/AivyVault.sol) enforces spending caps on-chain |
 | **50+ Hedera Tools** | Full Agent Kit: accounts, tokens, consensus, contracts, queries |
 | **AI Chat** | Natural language interface — GPT-4o routes to the right Hedera tools |
 | **Multi-Agent Routing** | Ask a question, Aivy picks the best agent to answer |
 | **Agent Coordination** | Agents trigger actions on other agents (e.g., low balance alerts) |
 | **Live Activity Feed** | Mirror Node-backed ticker with HashScan transaction links |
+| **Global Wallet State** | WalletContext provides batch balance pre-fetching and 30s auto-refresh |
+| **Mobile Support** | Touch-friendly with long-press hover cards, responsive layout |
 
 ---
 
@@ -116,12 +125,15 @@ Users connect their HashPack wallet via WalletConnect/HashConnect v3 to:
 | Layer | Technology |
 |-------|-----------|
 | Frontend | React 19, TypeScript, Vite |
+| Office Engine | Pixel sprites with CSS animations, room-based layout |
 | Backend | Express 5, Node.js, SQLite (better-sqlite3) |
-| AI | OpenAI GPT-4o with tool calling |
+| AI | OpenAI GPT-4o with function calling |
 | Blockchain | Hedera SDK, Hedera Agent Kit, Solidity (AivyVault) |
+| Smart Contract | [AivyVault.sol](contracts/AivyVault.sol) — Solidity ^0.8.24, compiled via solc-js |
 | Security | AES-256-GCM key encryption, JWT auth, rate limiting |
 | Automation | node-cron, Mirror Node REST polling |
 | Wallet | HashConnect v3, WalletConnect |
+| Testing | Vitest, 140+ unit tests |
 
 ---
 
@@ -152,11 +164,12 @@ VITE_WALLETCONNECT_PROJECT_ID=...       # Optional: HashPack wallet connect
 
 Security keys (`MASTER_ENCRYPTION_KEY`, `JWT_SECRET`) are auto-generated on first run if not set.
 
-### Build
+### Build & Test
 
 ```bash
 npm run build    # TypeScript + Vite production bundle
 npm run lint     # ESLint check
+npm test         # Run 140+ unit tests via Vitest
 ```
 
 ---
@@ -175,36 +188,67 @@ npm run lint     # ESLint check
 ### What Each Agent Gets
 
 1. **Dedicated Hedera Account** — Own key pair, encrypted at rest (AES-256-GCM)
-2. **AivyVault Contract** — On-chain spending cap enforcement via Solidity
+2. **AivyVault Contract** — On-chain spending cap enforcement via [Solidity](contracts/AivyVault.sol)
 3. **HCS Audit Topic** — Every action logged immutably on Hedera Consensus Service
 4. **GPT-4o Session** — Natural language with access to 50+ Hedera tools
 5. **Autonomous Execution** — Cron schedules + event-triggered actions via Mirror Node
+
+### Vault Contract Flow
+
+```
+Deploy Agent → Compile AivyVault.sol → Deploy to Hedera EVM → Enforce Caps On-Chain
+                    │                        │                        │
+                    ▼                        ▼                        ▼
+              solc-js compile      ContractCreateFlow          logExecution()
+              (server-side)        (Hedera SDK)               reverts if cap exceeded
+```
 
 ---
 
 ## Project Structure
 
 ```
+contracts/
+  AivyVault.sol         # On-chain spending guardrails (Solidity ^0.8.24)
+
 server/
-  index.ts          # Express API — agents, chat, tools, schedules, triggers
-  db.ts             # SQLite — deployments, spending, schedules, triggers
-  auth.ts           # JWT challenge-response with Hedera account verification
-  crypto.ts         # AES-256-GCM encryption for agent private keys
-  scheduler.ts      # node-cron wrapper for autonomous agent execution
-  eventPoller.ts    # Mirror Node polling for HBAR, HCS, token events
-  rateLimiter.ts    # Per-route rate limiting
-  middleware.ts     # Auth middleware
+  index.ts              # Express API — agents, chat, tools, schedules, triggers
+  db.ts                 # SQLite — deployments, spending, schedules, triggers
+  auth.ts               # JWT challenge-response with Hedera account verification
+  crypto.ts             # AES-256-GCM encryption for agent private keys
+  scheduler.ts          # node-cron wrapper for autonomous agent execution
+  eventPoller.ts        # Mirror Node polling for HBAR, HCS, token events
+  rateLimiter.ts        # Per-route rate limiting
+  middleware.ts         # Auth middleware
 
 src/
+  contexts/
+    WalletContext.tsx    # Global wallet state, batch balance pre-fetching
   components/
-    AgentPanel.tsx      # Agent detail — chat, info, spending, automation tabs
-    ChatPanel.tsx       # AI chat with Hedera tool calling
-    ScheduleManager.tsx # Cron schedule CRUD UI
-    TriggerManager.tsx  # Event trigger CRUD UI
-    Dashboard.tsx       # Network-wide analytics
-    ToolLibrary.tsx     # Direct Hedera tool invocation
+    PixelOffice.tsx      # Office grid with themed rooms and agent sprites
+    AgentSprite.tsx      # Animated pixel sprites with hover cards, fund chip
+    AgentPanel.tsx       # Agent detail — chat, info, spending, automation tabs
+    FundModal.tsx        # Quick-fund modal with preset amounts
+    ChatPanel.tsx        # AI chat with Hedera tool calling
+    DeployModal.tsx      # Agent deployment wizard
+    ScheduleManager.tsx  # Cron schedule CRUD UI
+    TriggerManager.tsx   # Event trigger CRUD UI
+    Dashboard.tsx        # Network-wide analytics
+    ToolLibrary.tsx      # Direct Hedera tool invocation
+    Landing.tsx          # Landing page with vault architecture showcase
+  sprites/
+    generateSprites.ts   # Pixel art sprite sheet generator
+  hooks/
+    useWallet.ts         # HashConnect v3 wallet hook
+    useLiveData.ts       # Live agent data polling
+    useAgentMovement.ts  # Agent position animation
   lib/
-    hederaWallet.ts     # HashConnect v3 integration
+    hederaWallet.ts      # HashConnect v3 integration
+    auth.ts              # Client-side auth helpers
+
+tests/
+  client/               # Frontend unit tests
+  server/               # Backend unit tests
 ```
 
 ---
@@ -213,7 +257,8 @@ src/
 
 1. Create a branch from `main`
 2. Make your changes
-3. Open a Pull Request (1 approval required)
+3. Run `npm test` and `npm run build`
+4. Open a Pull Request (1 approval required)
 
 Branch protection is enabled — all changes go through PRs.
 

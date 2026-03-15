@@ -1,12 +1,12 @@
 # Product Brief
 
-## Working name
+## Name
 
-Nook
+Aivy
 
 ## One-line pitch
 
-A virtual pixel office for deploying Hedera agents from low-code templates, monitoring them in real time, and defaulting every sensitive action through a NookVault guardrail contract.
+A visual pixel office for deploying AI agents on Hedera from templates, monitoring them in real time, and enforcing every sensitive action through an AivyVault guardrail contract.
 
 ## Core idea
 
@@ -14,20 +14,18 @@ The product is not just an agent dashboard. It is a collaborative control room w
 
 - choose a template,
 - deploy an agent onto Hedera,
-- observe agent behavior visually,
-- inspect what the agent is doing,
+- observe agent behavior visually in a pixel office,
+- inspect what the agent is doing via AI chat,
 - approve or pause execution,
-- keep assets behind a vault contract instead of transferring funds to the agent.
+- keep assets behind an AivyVault contract instead of giving unrestricted access.
 
 ## Product stance
 
-For the hackathon, the product should behave like option 1 with proof of execution:
+For the hackathon, the product behaves as a template-first platform with proof of execution:
 
 - Primary mode: template-first deployment system.
-- Demo proof: at least one real agent running on your infrastructure through Hedera testnet.
-- Security posture: vault-first by default.
-
-That keeps the MVP clear while still proving there is a real backend path.
+- Demo proof: real agents running on Hedera testnet with dedicated accounts.
+- Security posture: vault-first by default — every agent gets an AivyVault contract.
 
 ## Main user promise
 
@@ -35,26 +33,30 @@ Developers and operators can launch an agent without manually wiring wallets, ru
 
 ## Key differentiators
 
-- Visual environment instead of a standard dashboard.
+- Visual pixel office with animated agent sprites — not a generic dashboard.
 - Hedera-native positioning, not generic agent tooling.
-- OculusVault default path that avoids giving token custody to autonomous agents.
+- AivyVault default path that enforces spending caps on-chain via Solidity.
+- Quick-fund flow — fund agents in 2-3 clicks with preset amounts.
 - Low-code deployment flow that can become a managed platform later.
 
 ## MVP scope
 
-1. Pixel office frontend with shared presence and agent visualization.
-2. Template catalog for 3-5 agent types.
-3. Deployment control plane for agent instances.
-4. Real-time event stream back into the office.
-5. Vault contract suggestion and default provisioning flow.
-6. One end-to-end testnet demo agent.
+1. Pixel office frontend with agent sprites, themed rooms, and activity feed.
+2. Template catalog for 4 agent types (Treasury, Yield, Compliance, Governance).
+3. Deployment flow with real Hedera account creation and vault contract deployment.
+4. Real-time balance monitoring via Mirror Node with 30s auto-refresh.
+5. AivyVault contract deployment and on-chain spending cap enforcement.
+6. Quick-fund modal with HashPack wallet integration.
+7. AI chat with 50+ Hedera Agent Kit tools.
+8. Autonomous execution via cron schedules and event triggers.
 
 ## Demo narrative
 
-1. Open the office and show the rooms.
-2. Deploy a template agent.
-3. Show the system suggesting or forcing OculusVault.
-4. Provision the vault-linked execution contract.
-5. Start the agent and display live events in the office.
-6. Pause, inspect, and resume the agent from the control room.
-7. Show a Hedera transaction or mirror-node-backed event.
+1. Open the landing page — see the pixel office preview and vault architecture.
+2. Click "Try Demo" — demo agents deploy on Hedera testnet with real accounts.
+3. Enter the office — see agents in themed rooms with live speech bubbles.
+4. Click an agent — view its Hedera account, vault contract, and spending data.
+5. Chat with an agent — ask it to check balances or create tokens.
+6. Fund an agent — click "Fund" chip, select preset amount, sign in HashPack.
+7. View the activity feed — real Mirror Node transactions with HashScan links.
+8. Check the dashboard — network-wide analytics and agent coordination stats.

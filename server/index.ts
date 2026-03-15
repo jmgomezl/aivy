@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import express from 'express'
@@ -192,66 +195,12 @@ const invokeToolSchema = z.object({
   params: z.record(z.string(), z.unknown()).default({}),
 })
 
-const AIVY_VAULT_SOURCE = `
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
-
-contract AivyVault {
-    address public owner;
-    string public agentName;
-    string public hederaAccountId;
-    uint256 public spendingCapTinybar;
-    bool public paused;
-    string public policyLabel;
-
-    event VaultProvisioned(string agentName, string hederaAccountId, uint256 spendingCapTinybar, string policyLabel);
-    event GuardrailsUpdated(uint256 spendingCapTinybar, bool paused, string policyLabel);
-    event ExecutionLogged(string action, uint256 amountTinybar, string targetAccountId, string note);
-
-    modifier onlyOwner() {
-        require(msg.sender == owner, "owner only");
-        _;
-    }
-
-    constructor(
-        string memory _agentName,
-        string memory _hederaAccountId,
-        uint256 _spendingCapTinybar,
-        string memory _policyLabel
-    ) payable {
-        owner = msg.sender;
-        agentName = _agentName;
-        hederaAccountId = _hederaAccountId;
-        spendingCapTinybar = _spendingCapTinybar;
-        policyLabel = _policyLabel;
-        emit VaultProvisioned(_agentName, _hederaAccountId, _spendingCapTinybar, _policyLabel);
-    }
-
-    function updateGuardrails(
-        uint256 _spendingCapTinybar,
-        bool _paused,
-        string calldata _policyLabel
-    ) external onlyOwner {
-        spendingCapTinybar = _spendingCapTinybar;
-        paused = _paused;
-        policyLabel = _policyLabel;
-        emit GuardrailsUpdated(_spendingCapTinybar, _paused, _policyLabel);
-    }
-
-    function logExecution(
-        string calldata action,
-        uint256 amountTinybar,
-        string calldata targetAccountId,
-        string calldata note
-    ) external onlyOwner {
-        require(!paused, "vault paused");
-        require(amountTinybar <= spendingCapTinybar, "cap exceeded");
-        emit ExecutionLogged(action, amountTinybar, targetAccountId, note);
-    }
-
-    receive() external payable {}
-}
-`
+// Read AivyVault contract source from the .sol file
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const AIVY_VAULT_SOURCE = readFileSync(
+  resolve(__dirname, '..', 'contracts', 'AivyVault.sol'),
+  'utf-8',
+)
 
 // Migrate old JSON deployments to SQLite on first run
 db.migrateFromJson()
