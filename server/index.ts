@@ -87,11 +87,11 @@ const capabilityGroupIds = [
   'chainlink',
 ] as const
 
-// Third-party plugin tool names
-// OpenAI requires function names to match ^[a-zA-Z0-9_-]+$ — we sanitise in buildOpenAITools
+// Third-party plugin tool names — always use .method (the snake_case identifier
+// that HederaAIToolkit registers internally), never .name (display label with spaces)
 const sanitizeToolName = (n: string) => n.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '')
-const saucerswapTools = saucerswapPlugin.tools().map((t: { name: string }) => t.name)
-const pythTools = pythPlugin.tools().map((t: { name: string }) => t.name)
+const saucerswapTools = saucerswapPlugin.tools().map((t: { method: string }) => t.method)
+const pythTools = pythPlugin.tools().map((t: { method: string }) => t.method)
 const memejobTools = memejobPlugin.tools().map((t: { method: string }) => t.method)
 const bonzoTools = bonzoPlugin.tools().map((t: { method: string }) => t.method)
 // CoinCap & Chainlink plugins have broken ESM packaging — hardcode their single tool names
@@ -2086,6 +2086,15 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
       initialFundingHbar,
       fundingSource,
     } = parsed.data
+
+    // Prevent duplicate agent names per user
+    const userId = (request as AuthenticatedRequest).userId!
+    const existing = db.getDeploymentsByUser(userId)
+    if (existing.some((d) => d.name.toLowerCase() === name.trim().toLowerCase())) {
+      response.status(409).json({ error: `An agent named "${name.trim()}" already exists. Please choose a different name.` })
+      return
+    }
+
     const capabilitySelection =
       chosenGroups.length > 0
         ? chosenGroups
