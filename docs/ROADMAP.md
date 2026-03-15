@@ -39,6 +39,28 @@ Success criteria:
 - AI chat routes to correct Hedera tools and returns real transaction results.
 - Mirror Node events trigger autonomous agent execution.
 
+## Phase 1.5: Agentic Commerce — ERC-8183 (Complete)
+
+Goal: Enable trustless agent-to-agent settlements on top of AivyVault spending caps.
+
+Deliverables:
+
+1. AivyJobManager.sol contract implementing ERC-8183 job lifecycle with escrow.
+2. IACPHook interface for extensible pre/post action hooks.
+3. Vault cap bridge — spending caps enforced before job funding.
+4. 7 new API endpoints for job CRUD and lifecycle transitions.
+5. Jobs database table with full lifecycle tracking.
+6. 19 new tests covering contract compilation, job lifecycle, and vault integration.
+7. ERC-8183 documentation with Mermaid architecture diagrams.
+
+Success criteria:
+
+- AivyJobManager compiles successfully alongside AivyVault.
+- Full job lifecycle: Open → Funded → Submitted → Completed/Rejected/Expired.
+- Vault spending cap blocks job funding when cap would be exceeded.
+- Provider receives payment only after evaluator approval.
+- Client can reclaim escrowed HBAR after rejection or expiry.
+
 ## Phase 2: Post-hackathon productization
 
 Goal: Move from demo to reusable builder product.

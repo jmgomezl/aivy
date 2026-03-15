@@ -131,9 +131,29 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY,
+    job_chain_id INTEGER NOT NULL,
+    client_agent_id TEXT NOT NULL,
+    provider_agent_id TEXT NOT NULL,
+    evaluator_address TEXT,
+    description TEXT NOT NULL,
+    budget_hbar REAL NOT NULL,
+    expired_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'Open',
+    deliverable TEXT,
+    contract_id TEXT,
+    tx_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE INDEX IF NOT EXISTS idx_schedules_deployment ON agent_schedules(deployment_id);
   CREATE INDEX IF NOT EXISTS idx_schedule_exec_schedule ON schedule_executions(schedule_id);
   CREATE INDEX IF NOT EXISTS idx_triggers_deployment ON event_triggers(deployment_id);
+  CREATE INDEX IF NOT EXISTS idx_jobs_client ON jobs(client_agent_id);
+  CREATE INDEX IF NOT EXISTS idx_jobs_provider ON jobs(provider_agent_id);
+  CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 `)
 
 // ─── Types ───────────────────────────────────────────
@@ -862,6 +882,118 @@ export function updateTriggerCheckedAt(id: string, iso: string): void {
 
 export function updateTriggerTriggeredAt(id: string, iso: string): void {
   stmtUpdateTriggerTriggered.run(iso, id)
+}
+
+// ─── Jobs (ERC-8183) ─────────────────────────────────
+export type JobRecord = {
+  id: string
+  jobChainId: number
+  clientAgentId: string
+  providerAgentId: string
+  evaluatorAddress: string | null
+  description: string
+  budgetHbar: number
+  expiredAt: string
+  status: 'Open' | 'Funded' | 'Submitted' | 'Completed' | 'Rejected' | 'Expired'
+  deliverable: string | null
+  contractId: string | null
+  txId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+type JobRow = {
+  id: string
+  job_chain_id: number
+  client_agent_id: string
+  provider_agent_id: string
+  evaluator_address: string | null
+  description: string
+  budget_hbar: number
+  expired_at: string
+  status: string
+  deliverable: string | null
+  contract_id: string | null
+  tx_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+function rowToJob(row: JobRow): JobRecord {
+  return {
+    id: row.id,
+    jobChainId: row.job_chain_id,
+    clientAgentId: row.client_agent_id,
+    providerAgentId: row.provider_agent_id,
+    evaluatorAddress: row.evaluator_address,
+    description: row.description,
+    budgetHbar: row.budget_hbar,
+    expiredAt: row.expired_at,
+    status: row.status as JobRecord['status'],
+    deliverable: row.deliverable,
+    contractId: row.contract_id,
+    txId: row.tx_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+const stmtInsertJob = db.prepare(
+  `INSERT INTO jobs (id, job_chain_id, client_agent_id, provider_agent_id, evaluator_address,
+    description, budget_hbar, expired_at, status, deliverable, contract_id, tx_id)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+)
+const stmtGetJob = db.prepare('SELECT * FROM jobs WHERE id = ?')
+const stmtGetJobsByAgent = db.prepare(
+  `SELECT * FROM jobs WHERE client_agent_id = ? OR provider_agent_id = ? ORDER BY created_at DESC`,
+)
+const stmtUpdateJobStatus = db.prepare(
+  `UPDATE jobs SET status = ?, deliverable = ?, tx_id = ?, updated_at = datetime('now') WHERE id = ?`,
+)
+
+export function insertJob(job: JobRecord): void {
+  stmtInsertJob.run(
+    job.id, job.jobChainId, job.clientAgentId, job.providerAgentId,
+    job.evaluatorAddress, job.description, job.budgetHbar, job.expiredAt,
+    job.status, job.deliverable, job.contractId, job.txId,
+  )
+}
+
+export function getJob(id: string): JobRecord | null {
+  const row = stmtGetJob.get(id) as JobRow | undefined
+  return row ? rowToJob(row) : null
+}
+
+export function getJobsByAgent(agentId: string): JobRecord[] {
+  const rows = stmtGetJobsByAgent.all(agentId, agentId) as JobRow[]
+  return rows.map(rowToJob)
+}
+
+export function updateJobStatus(
+  id: string,
+  status: JobRecord['status'],
+  deliverable?: string | null,
+  txId?: string | null,
+): void {
+  const existing = getJob(id)
+  if (!existing) return
+  stmtUpdateJobStatus.run(
+    status,
+    deliverable ?? existing.deliverable,
+    txId ?? existing.txId,
+    id,
+  )
+}
+
+export function getJobsByUser(userId: string): JobRecord[] {
+  const stmt = db.prepare(
+    `SELECT j.* FROM jobs j
+     INNER JOIN deployments d ON (j.client_agent_id = d.id OR j.provider_agent_id = d.id)
+     WHERE d.user_id = ?
+     ORDER BY j.created_at DESC`,
+  )
+  const rows = stmt.all(userId) as JobRow[]
+  return rows.map(rowToJob)
 }
 
 // ─── JSON Migration ──────────────────────────────────

@@ -79,7 +79,28 @@ Template selected → solc-js compiles AivyVault.sol
                   → logExecution() called before each tool invocation
 ```
 
-### 4. Hedera integration layer
+### 4. ERC-8183 Job Manager
+
+The AivyJobManager contract ([`contracts/AivyJobManager.sol`](../contracts/AivyJobManager.sol)) implements the ERC-8183 Agentic Commerce Protocol for agent-to-agent settlements:
+
+- **Job lifecycle** — Open → Funded → Submitted → Completed/Rejected/Expired.
+- **Escrow** — HBAR held in the contract until evaluator approves or rejects.
+- **Vault bridge** — AivyVault spending caps are checked before any job is funded.
+- **Hooks** — Optional `IACPHook` interface for custom logic on submit/complete.
+
+```mermaid
+graph LR
+    A[Client Agent] -->|"createJob + fund"| JM[AivyJobManager]
+    JM -->|"pay on complete"| B[Provider Agent]
+    V[AivyVault] -->|"cap check"| JM
+
+    style V fill:#f59e0b,color:#000
+    style JM fill:#3b82f6,color:#fff
+```
+
+See [`docs/ERC8183.md`](ERC8183.md) for full documentation with Mermaid diagrams.
+
+### 5. Hedera integration layer
 
 Responsibilities:
 
@@ -101,6 +122,7 @@ Integration points:
 ```
 contracts/
   AivyVault.sol           # On-chain spending guardrails
+  AivyJobManager.sol      # ERC-8183 agent-to-agent settlements
 
 server/
   index.ts                # Express API + Hedera integration
@@ -135,7 +157,7 @@ src/
     hederaWallet.ts        # HashConnect v3
     auth.ts                # Client auth
 
-tests/                     # 140+ unit tests
+tests/                     # 159+ unit tests
   client/
   server/
 ```

@@ -1361,6 +1361,64 @@ const compileVault = () => {
 
 const compiledVault = compileVault()
 
+// ─── ERC-8183 AivyJobManager Compilation ────────────
+const AIVY_JOB_MANAGER_SOURCE = readFileSync(
+  resolve(__dirname, '..', 'contracts', 'AivyJobManager.sol'),
+  'utf-8',
+)
+
+const compileJobManager = () => {
+  const input = {
+    language: 'Solidity',
+    sources: {
+      'AivyJobManager.sol': {
+        content: AIVY_JOB_MANAGER_SOURCE,
+      },
+    },
+    settings: {
+      outputSelection: {
+        '*': {
+          '*': ['abi', 'evm.bytecode.object'],
+        },
+      },
+    },
+  }
+
+  const output = JSON.parse(solc.compile(JSON.stringify(input))) as {
+    contracts?: {
+      'AivyJobManager.sol'?: {
+        AivyJobManager?: {
+          abi: unknown[]
+          evm: {
+            bytecode: {
+              object: string
+            }
+          }
+        }
+      }
+    }
+    errors?: Array<{ severity: string; formattedMessage: string }>
+  }
+
+  const errors = output.errors?.filter((item) => item.severity === 'error') ?? []
+  if (errors.length > 0) {
+    throw new Error(errors.map((item) => item.formattedMessage).join('\n'))
+  }
+
+  const contract = output.contracts?.['AivyJobManager.sol']?.AivyJobManager
+  if (!contract?.evm.bytecode.object) {
+    throw new Error('Failed to compile AivyJobManager contract.')
+  }
+
+  console.log('[Aivy] AivyJobManager (ERC-8183) compiled successfully.')
+  return {
+    abi: contract.abi,
+    bytecode: contract.evm.bytecode.object,
+  }
+}
+
+const compiledJobManager = compileJobManager()
+
 const titleCase = (value: string) =>
   value
     .split('_')
@@ -1657,6 +1715,25 @@ const logVaultExecution = async (
   await transaction.getReceipt(client)
   return {
     transactionId: transaction.transactionId.toString(),
+  }
+}
+
+// ─── ERC-8183 JobManager Deployment ─────────────────
+const deployJobManagerContract = async () => {
+  if (!client) {
+    throw new Error('Hedera client is not configured.')
+  }
+
+  const transaction = await new ContractCreateFlow()
+    .setGas(2_500_000)
+    .setBytecode(compiledJobManager.bytecode)
+    .execute(client)
+  const receipt = await transaction.getReceipt(client)
+
+  return {
+    transactionId: transaction.transactionId.toString(),
+    contractId: receipt.contractId?.toString() ?? null,
+    contractAddress: receipt.contractId?.toSolidityAddress() ?? null,
   }
 }
 
@@ -3968,6 +4045,233 @@ app.delete('/api/agents/:agentId/triggers/:trigId', requireAuth, (request, respo
   }
   db.deleteTrigger(existing.id)
   response.json({ deleted: true })
+})
+
+// ═══════════════════════════════════════════════════
+// ERC-8183 — Agent-to-Agent Jobs
+// ═══════════════════════════════════════════════════
+
+const jobCreateSchema = z.object({
+  clientAgentId: z.string().min(1),
+  providerAgentId: z.string().min(1),
+  description: z.string().min(2).max(500),
+  budgetHbar: z.number().min(0.001).max(100000),
+  expiresInMinutes: z.number().min(1).max(525600).optional().default(1440), // default 24h
+})
+
+const jobSubmitSchema = z.object({
+  deliverable: z.string().min(1).max(2000),
+})
+
+const jobRejectSchema = z.object({
+  reason: z.string().min(1).max(500).optional().default('Rejected by evaluator'),
+})
+
+// POST /api/jobs — Create a job between two agents
+app.post('/api/jobs', requireAuth, toolLimiter, async (request, response) => {
+  const parsed = jobCreateSchema.safeParse(request.body)
+  if (!parsed.success) {
+    response.status(400).json({ error: flattenZodError(parsed.error) })
+    return
+  }
+
+  const { clientAgentId, providerAgentId, description, budgetHbar, expiresInMinutes } = parsed.data
+
+  if (clientAgentId === providerAgentId) {
+    response.status(400).json({ error: 'Client and provider must be different agents.' })
+    return
+  }
+
+  const clientAgent = db.getDeployment(clientAgentId)
+  if (!clientAgent) { response.status(404).json({ error: 'Client agent not found.' }); return }
+  if (!assertAgentOwnership(clientAgent, request)) { response.status(403).json({ error: 'You do not own the client agent.' }); return }
+
+  const providerAgent = db.getDeployment(providerAgentId)
+  if (!providerAgent) { response.status(404).json({ error: 'Provider agent not found.' }); return }
+  if (!assertAgentOwnership(providerAgent, request)) { response.status(403).json({ error: 'You do not own the provider agent.' }); return }
+
+  try {
+    const jobId = `job-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
+    const expiredAt = new Date(Date.now() + expiresInMinutes * 60_000).toISOString()
+
+    let contractId: string | null = null
+    let txId: string | null = null
+
+    if (!demoMode) {
+      const result = await deployJobManagerContract()
+      contractId = result.contractId
+      txId = result.transactionId
+    } else {
+      contractId = nextDemoContractId()
+      txId = nextDemoTxId()
+    }
+
+    const job: db.JobRecord = {
+      id: jobId,
+      jobChainId: 1,
+      clientAgentId,
+      providerAgentId,
+      evaluatorAddress: config.operatorAccountId || null,
+      description,
+      budgetHbar,
+      expiredAt,
+      status: 'Open',
+      deliverable: null,
+      contractId,
+      txId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+
+    db.insertJob(job)
+    pushActivity(`Job created: ${clientAgent.name} → ${providerAgent.name} (${budgetHbar} HBAR)`, 'vault')
+
+    response.json({ job: db.getJob(jobId) })
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : 'Failed to create job.' })
+  }
+})
+
+// GET /api/jobs — List jobs for current user's agents
+app.get('/api/jobs', requireAuth, readLimiter, (request, response) => {
+  const authReq = request as AuthRequest
+  const jobs = db.getJobsByUser(authReq.userId ?? 'anonymous')
+  response.json({ jobs })
+})
+
+// GET /api/jobs/:jobId — Get job details
+app.get('/api/jobs/:jobId', requireAuth, readLimiter, (request, response) => {
+  const job = db.getJob(request.params.jobId)
+  if (!job) { response.status(404).json({ error: 'Job not found.' }); return }
+  response.json({ job })
+})
+
+// POST /api/jobs/:jobId/fund — Fund the job (checks vault spending cap first)
+app.post('/api/jobs/:jobId/fund', requireAuth, toolLimiter, async (request, response) => {
+  const job = db.getJob(request.params.jobId)
+  if (!job) { response.status(404).json({ error: 'Job not found.' }); return }
+  if (job.status !== 'Open') { response.status(400).json({ error: `Job is ${job.status}, expected Open.` }); return }
+
+  const clientAgent = db.getDeployment(job.clientAgentId)
+  if (!clientAgent) { response.status(404).json({ error: 'Client agent not found.' }); return }
+  if (!assertAgentOwnership(clientAgent, request)) { response.status(403).json({ error: 'You do not own the client agent.' }); return }
+
+  // Vault cap bridge: check spending cap before funding
+  if (clientAgent.vaultProtected) {
+    const summary = db.getSpendingSummary(clientAgent.id)
+    if (summary.totalSpent + job.budgetHbar > clientAgent.vaultCapHbar) {
+      response.status(403).json({
+        error: `Vault cap exceeded. Agent spent ${summary.totalSpent} HBAR of ${clientAgent.vaultCapHbar} HBAR cap. Job requires ${job.budgetHbar} HBAR.`,
+      })
+      return
+    }
+  }
+
+  try {
+    // Record spending against vault
+    const fundTxId = demoMode ? nextDemoTxId() : job.txId
+    db.recordSpending(
+      clientAgent.id,
+      job.budgetHbar,
+      'outflow',
+      'erc8183_fund',
+      fundTxId,
+      'chat',
+      `Funded ERC-8183 job: ${job.description.slice(0, 80)}`,
+    )
+
+    db.updateJobStatus(job.id, 'Funded', null, fundTxId)
+    pushActivity(`Job funded: ${clientAgent.name} escrowed ${job.budgetHbar} HBAR`, 'vault')
+
+    response.json({ job: db.getJob(job.id), message: 'Job funded successfully.' })
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : 'Failed to fund job.' })
+  }
+})
+
+// POST /api/jobs/:jobId/submit — Provider submits deliverable
+app.post('/api/jobs/:jobId/submit', requireAuth, toolLimiter, (request, response) => {
+  const parsed = jobSubmitSchema.safeParse(request.body)
+  if (!parsed.success) { response.status(400).json({ error: flattenZodError(parsed.error) }); return }
+
+  const job = db.getJob(request.params.jobId)
+  if (!job) { response.status(404).json({ error: 'Job not found.' }); return }
+  if (job.status !== 'Funded') { response.status(400).json({ error: `Job is ${job.status}, expected Funded.` }); return }
+
+  const providerAgent = db.getDeployment(job.providerAgentId)
+  if (!providerAgent) { response.status(404).json({ error: 'Provider agent not found.' }); return }
+  if (!assertAgentOwnership(providerAgent, request)) { response.status(403).json({ error: 'You do not own the provider agent.' }); return }
+
+  db.updateJobStatus(job.id, 'Submitted', parsed.data.deliverable)
+  pushActivity(`Job submitted: ${providerAgent.name} delivered work`, 'success')
+
+  response.json({ job: db.getJob(job.id), message: 'Deliverable submitted.' })
+})
+
+// POST /api/jobs/:jobId/complete — Evaluator approves and releases payment
+app.post('/api/jobs/:jobId/complete', requireAuth, toolLimiter, (request, response) => {
+  const job = db.getJob(request.params.jobId)
+  if (!job) { response.status(404).json({ error: 'Job not found.' }); return }
+  if (job.status !== 'Submitted') { response.status(400).json({ error: `Job is ${job.status}, expected Submitted.` }); return }
+
+  const providerAgent = db.getDeployment(job.providerAgentId)
+  if (!providerAgent) { response.status(404).json({ error: 'Provider agent not found.' }); return }
+
+  // Record inflow to provider agent
+  const payTxId = demoMode ? nextDemoTxId() : `${job.txId}-pay`
+  db.recordSpending(
+    providerAgent.id,
+    job.budgetHbar,
+    'inflow',
+    'erc8183_payout',
+    payTxId,
+    'chat',
+    `ERC-8183 payout for job: ${job.description.slice(0, 80)}`,
+  )
+
+  db.updateJobStatus(job.id, 'Completed', null, payTxId)
+
+  const clientAgent = db.getDeployment(job.clientAgentId)
+  pushActivity(
+    `Job completed: ${clientAgent?.name ?? 'agent'} paid ${providerAgent.name} ${job.budgetHbar} HBAR`,
+    'success',
+  )
+
+  response.json({ job: db.getJob(job.id), message: `Payment of ${job.budgetHbar} HBAR released to ${providerAgent.name}.` })
+})
+
+// POST /api/jobs/:jobId/reject — Evaluator rejects deliverable
+app.post('/api/jobs/:jobId/reject', requireAuth, toolLimiter, (request, response) => {
+  const parsed = jobRejectSchema.safeParse(request.body)
+  if (!parsed.success) { response.status(400).json({ error: flattenZodError(parsed.error) }); return }
+
+  const job = db.getJob(request.params.jobId)
+  if (!job) { response.status(404).json({ error: 'Job not found.' }); return }
+  if (job.status !== 'Submitted' && job.status !== 'Funded') {
+    response.status(400).json({ error: `Job is ${job.status}, expected Submitted or Funded.` })
+    return
+  }
+
+  db.updateJobStatus(job.id, 'Rejected')
+
+  // Refund client agent if job was funded
+  if (job.status === 'Funded' || job.status === 'Submitted') {
+    const refundTxId = demoMode ? nextDemoTxId() : `${job.txId}-refund`
+    db.recordSpending(
+      job.clientAgentId,
+      job.budgetHbar,
+      'inflow',
+      'erc8183_refund',
+      refundTxId,
+      'chat',
+      `ERC-8183 refund for rejected job: ${job.description.slice(0, 80)}`,
+    )
+  }
+
+  const clientAgent = db.getDeployment(job.clientAgentId)
+  pushActivity(`Job rejected: ${clientAgent?.name ?? 'agent'} refunded ${job.budgetHbar} HBAR`, 'system')
+
+  response.json({ job: db.getJob(job.id), message: 'Job rejected. Funds returned to client agent.' })
 })
 
 // ═══════════════════════════════════════════════════
