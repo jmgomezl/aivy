@@ -93,9 +93,7 @@ Users connect their HashPack wallet via WalletConnect/HashConnect v3 to:
 
 ## Screenshots
 
-| Pixel Office | Agent Detail |
-|:------------:|:------------:|
-| ![Office](docs/screenshots/office.png) | ![Landing](docs/screenshots/landing.png) |
+![Aivy Office](docs/screenshots/landing.png)
 
 ---
 
