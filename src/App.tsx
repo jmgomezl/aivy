@@ -417,7 +417,8 @@ function App() {
   // ─── Demo Seed Handler ──────────────────────────
   const handleTryDemo = useCallback(async () => {
     try {
-      // Clear any existing session so demo starts fresh
+      // Disconnect wallet and clear session so demo starts fresh
+      if (wallet.status === 'connected') await disconnectWallet()
       const { clearToken } = await import('./lib/auth')
       clearToken()
       const result = await requestJson<{ seeded: number; token?: string }>('/api/demo/seed', { method: 'POST' })
@@ -434,7 +435,7 @@ function App() {
     } catch {
       live.setServerMessage('Could not start demo. Make sure the backend server is running.')
     }
-  }, [live])
+  }, [live, wallet.status, disconnectWallet])
 
   // ─── Landing View ─────────────────────────────
   if (view === 'landing') {
