@@ -71,7 +71,7 @@ export default function PixelOffice({
         <div className="fstat-divider" />
         <div className="fstat">
           <span>{stats.totalBalance.toFixed(1)}</span>
-          <label>Balance</label>
+          <label>Agents Balance</label>
         </div>
         <div className="fstat-divider" />
         <div className="fstat">

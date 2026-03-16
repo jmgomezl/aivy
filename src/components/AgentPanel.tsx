@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { LiveAgent, ToolCatalogResponse, ToolCatalogEntry, ToolWorkflow, ToolCatalogGroup, ActivityEvent, AgentSpendingResponse } from '../types'
+import type { LiveAgent, ToolCatalogResponse, ToolCatalogEntry, ToolWorkflow, ToolCatalogGroup, ActivityEvent, AgentSpendingResponse, JobRecord } from '../types'
 import { statusMeta, toneClass, templates } from '../data'
 import { requestJson } from '../utils'
+import { getAuthHeaders } from '../lib/auth'
 import { useToast } from '../hooks/useToast'
 import { useWalletContext } from '../contexts/WalletContext'
 import ChatPanel from './ChatPanel'
 import ScheduleManager from './ScheduleManager'
 import TriggerManager from './TriggerManager'
+import type { CapabilityGroupId } from '../types'
 import './AgentPanel.css'
+
+const comingSoonGroups = new Set<CapabilityGroupId>(['saucerswap', 'bonzo', 'memejob', 'coincap'])
 
 type AgentPanelProps = {
   agent: LiveAgent
@@ -49,8 +53,9 @@ export default function AgentPanel({
   onFund,
 }: AgentPanelProps) {
   const { wallet, connectWallet, agentBalances } = useWalletContext()
-  const [activeTab, setActiveTab] = useState<'info' | 'chat' | 'history' | 'spending' | 'automation'>(chatEnabled ? 'chat' : 'info')
+  const [activeTab, setActiveTab] = useState<'info' | 'chat' | 'history' | 'spending' | 'automation' | 'jobs'>(chatEnabled ? 'chat' : 'info')
   const [isExporting, setIsExporting] = useState(false)
+  const [showDestroyConfirm, setShowDestroyConfirm] = useState(false)
   const [coordTarget, setCoordTarget] = useState('')
   const [coordMsg, setCoordMsg] = useState('')
   const [coordSending, setCoordSending] = useState(false)
@@ -64,6 +69,12 @@ export default function AgentPanel({
   const [spendingData, setSpendingData] = useState<AgentSpendingResponse | null>(null)
   const [spendingLoading, setSpendingLoading] = useState(false)
   const [addressCopied, setAddressCopied] = useState(false)
+  const [jobs, setJobs] = useState<JobRecord[]>([])
+  const [jobsLoading, setJobsLoading] = useState(false)
+  const [jobCreateOpen, setJobCreateOpen] = useState(false)
+  const [jobForm, setJobForm] = useState({ providerAgentId: '', description: '', budgetHbar: '5', expiresInMinutes: '1440' })
+  const [jobSubmitting, setJobSubmitting] = useState(false)
+  const [jobActionLoading, setJobActionLoading] = useState<string | null>(null)
   const { addToast } = useToast()
   const lastSeenEventRef = useRef<string | null>(null)
 
@@ -89,10 +100,31 @@ export default function AgentPanel({
       setSpendingLoading(true)
       requestJson<AgentSpendingResponse>(`/api/agents/${agent.id}/spending`)
         .then(setSpendingData)
-        .catch((err) => { console.warn('[AgentPanel] Spending fetch failed:', err); setSpendingData(null) })
+        .catch(() => { setSpendingData(null) })
         .finally(() => setSpendingLoading(false))
     }
   }, [agent.id, activeTab])
+
+  const fetchJobs = useCallback(() => {
+    setJobsLoading(true)
+    requestJson<{ jobs: JobRecord[] }>('/api/jobs')
+      .then((res) => {
+        const agentJobs = res.jobs.filter(
+          (j) => j.clientAgentId === agent.id || j.providerAgentId === agent.id,
+        )
+        setJobs(agentJobs)
+      })
+      .catch(() => setJobs([]))
+      .finally(() => setJobsLoading(false))
+  }, [agent.id])
+
+  useEffect(() => {
+    fetchJobs() // Eagerly load for badge count
+  }, [fetchJobs])
+
+  useEffect(() => {
+    if (activeTab === 'jobs') fetchJobs()
+  }, [activeTab, fetchJobs])
 
   // Read pre-fetched balance from context (populated by PhaserOffice batch-fetch)
   const walletBalance = agent.agentAccountId ? agentBalances.get(agent.agentAccountId) ?? null : null
@@ -134,7 +166,9 @@ export default function AgentPanel({
   const handleExportAudit = async () => {
     setIsExporting(true)
     try {
-      const resp = await fetch(`/api/agents/${agent.id}/export-audit`)
+      const resp = await fetch(`/api/agents/${agent.id}/export-audit`, {
+        headers: getAuthHeaders(),
+      })
       if (!resp.ok) throw new Error('Export failed')
       const blob = await resp.blob()
       const url = URL.createObjectURL(blob)
@@ -219,6 +253,49 @@ export default function AgentPanel({
     }
   }, [agent.agentAccountId, addToast])
 
+  const handleCreateJob = async () => {
+    if (!jobForm.providerAgentId || !jobForm.description.trim()) return
+    setJobSubmitting(true)
+    try {
+      await requestJson('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientAgentId: agent.id,
+          providerAgentId: jobForm.providerAgentId,
+          description: jobForm.description,
+          budgetHbar: parseFloat(jobForm.budgetHbar) || 5,
+          expiresInMinutes: parseInt(jobForm.expiresInMinutes) || 1440,
+        }),
+      })
+      setJobForm({ providerAgentId: '', description: '', budgetHbar: '5', expiresInMinutes: '1440' })
+      setJobCreateOpen(false)
+      fetchJobs()
+      addToast('Job created!', 'success')
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Failed to create job', 'info')
+    } finally {
+      setJobSubmitting(false)
+    }
+  }
+
+  const handleJobAction = async (jobId: string, action: 'fund' | 'submit' | 'complete' | 'reject', body?: Record<string, unknown>) => {
+    setJobActionLoading(jobId)
+    try {
+      await requestJson(`/api/jobs/${jobId}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body ?? {}),
+      })
+      fetchJobs()
+      addToast(`Job ${action}ed!`, 'success')
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : `Failed to ${action} job`, 'info')
+    } finally {
+      setJobActionLoading(null)
+    }
+  }
+
   const workflows = useMemo(() => {
     if (!catalog) return []
     return catalog.workflowsByTemplate[agent.templateId] ?? []
@@ -298,7 +375,7 @@ export default function AgentPanel({
               )}
             </div>
           </div>
-          <button className="ap-close" onClick={onClose} type="button">
+          <button className="ap-close" onClick={onClose} type="button" aria-label="Close agent panel">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
@@ -356,6 +433,21 @@ export default function AgentPanel({
             Spending
           </button>
           <button
+            className={`ap-tab ${activeTab === 'jobs' ? 'is-active' : ''}`}
+            onClick={() => setActiveTab('jobs')}
+            type="button"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2" />
+              <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+              <path d="M9 14l2 2 4-4" />
+            </svg>
+            Jobs
+            {jobs.length > 0 && activeTab !== 'jobs' && (
+              <span className="ap-tab-badge">{jobs.length}</span>
+            )}
+          </button>
+          <button
             className={`ap-tab ${activeTab === 'automation' ? 'is-active' : ''}`}
             onClick={() => setActiveTab('automation')}
             type="button"
@@ -392,11 +484,23 @@ export default function AgentPanel({
             <div className="ap-stats">
               <div className="ap-stat">
                 <span>Topic</span>
-                <strong>{agent.topicId ?? 'Pending'}</strong>
+                {agent.topicId ? (
+                  <a href={`https://hashscan.io/testnet/topic/${agent.topicId}`} target="_blank" rel="noopener noreferrer" className="ap-stat-link">
+                    {agent.topicId}
+                  </a>
+                ) : (
+                  <strong>Pending</strong>
+                )}
               </div>
               <div className="ap-stat">
                 <span>Vault</span>
-                <strong>{agent.contractId ?? 'Pending'}</strong>
+                {agent.contractId ? (
+                  <a href={`https://hashscan.io/testnet/contract/${agent.contractId}`} target="_blank" rel="noopener noreferrer" className="ap-stat-link">
+                    {agent.contractId}
+                  </a>
+                ) : (
+                  <strong>Pending</strong>
+                )}
               </div>
               <div className="ap-stat">
                 <span>Runs</span>
@@ -406,6 +510,14 @@ export default function AgentPanel({
                 <span>Cap</span>
                 <strong>{agent.vaultCapHbar} HBAR</strong>
               </div>
+              {agent.deploymentTxId && (
+                <div className="ap-stat ap-stat--wide">
+                  <span>Deploy Tx</span>
+                  <a href={`https://hashscan.io/testnet/transaction/${agent.deploymentTxId}`} target="_blank" rel="noopener noreferrer" className="ap-stat-link">
+                    {agent.deploymentTxId}
+                  </a>
+                </div>
+              )}
             </div>
 
             {/* ─── Wallet ──────────────────────────── */}
@@ -626,9 +738,15 @@ export default function AgentPanel({
                 {agent.capabilityGroups.map((groupId) => {
                   const group: ToolCatalogGroup | undefined = toolGroups.find((g) => g.id === groupId)
                   if (!group) return null
+                  const isSoon = comingSoonGroups.has(groupId)
                   return (
-                    <span className={`ap-chip ${toneClass[group.tone]}`} key={group.id}>
+                    <span
+                      className={`ap-chip ${toneClass[group.tone]}${isSoon ? ' is-coming-soon' : ''}`}
+                      key={group.id}
+                      title={isSoon ? 'Coming soon — requires API key' : group.description}
+                    >
                       {group.label}
+                      {isSoon && <span className="ap-chip-soon">Soon</span>}
                     </span>
                   )
                 })}
@@ -695,9 +813,29 @@ export default function AgentPanel({
               <button className="ap-btn-secondary" onClick={onToggleAgent} type="button">
                 {agent.status === 'paused' ? 'Resume' : 'Pause'}
               </button>
-              <button className="ap-btn-ghost" onClick={onRemoveAgent} type="button">
-                Remove
-              </button>
+              {!showDestroyConfirm ? (
+                <button className="ap-btn-destroy" onClick={() => setShowDestroyConfirm(true)} type="button">
+                  Destroy Agent
+                </button>
+              ) : (
+                <div className="ap-destroy-confirm">
+                  <p className="ap-destroy-warn">
+                    This will permanently delete <strong>{agent.name}</strong>.
+                    {agent.walletType === 'dedicated' && walletBalance !== null && walletBalance > 0
+                      ? ` Remaining ${walletBalance} HBAR will be refunded to your wallet.`
+                      : ''
+                    }
+                  </p>
+                  <div className="ap-destroy-btns">
+                    <button className="ap-btn-destroy-confirm" onClick={onRemoveAgent} type="button">
+                      Confirm Destroy
+                    </button>
+                    <button className="ap-btn-secondary" onClick={() => setShowDestroyConfirm(false)} type="button">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -768,6 +906,147 @@ export default function AgentPanel({
                   ))}
                 </div>
               </>
+            )}
+          </div>
+        )}
+
+        {/* ─── Jobs Tab (ERC-8183) ──────────────── */}
+        {activeTab === 'jobs' && (
+          <div className="ap-jobs">
+            <div className="ap-jobs-header">
+              <span className="ap-section-label">ERC-8183 Agent Jobs</span>
+              <button className="ap-link" onClick={() => setJobCreateOpen(!jobCreateOpen)} type="button">
+                {jobCreateOpen ? 'Cancel' : '+ New Job'}
+              </button>
+            </div>
+
+            {jobCreateOpen && (
+              <div className="ap-job-create">
+                <select
+                  className="ap-coord-select"
+                  value={jobForm.providerAgentId}
+                  onChange={(e) => setJobForm({ ...jobForm, providerAgentId: e.target.value })}
+                >
+                  <option value="">Select provider agent...</option>
+                  {otherAgents.map(a => {
+                    const tpl = templates.find(t => t.id === a.templateId)
+                    return (
+                      <option key={a.id} value={a.id}>
+                        {a.name} — {tpl?.room ?? 'Office'}
+                      </option>
+                    )
+                  })}
+                </select>
+                <input
+                  className="ap-coord-input"
+                  placeholder="Job description..."
+                  value={jobForm.description}
+                  onChange={(e) => setJobForm({ ...jobForm, description: e.target.value })}
+                />
+                <div className="ap-job-create-row">
+                  <input
+                    type="number"
+                    className="ap-fund-input"
+                    placeholder="Budget HBAR"
+                    value={jobForm.budgetHbar}
+                    onChange={(e) => setJobForm({ ...jobForm, budgetHbar: e.target.value })}
+                    min="0.1"
+                    step="1"
+                  />
+                  <button
+                    className="ap-fund-btn"
+                    onClick={() => void handleCreateJob()}
+                    disabled={jobSubmitting || !jobForm.providerAgentId || !jobForm.description.trim()}
+                    type="button"
+                  >
+                    {jobSubmitting ? 'Creating...' : `Create Job (${jobForm.budgetHbar} ℏ)`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {jobsLoading ? (
+              <p className="ap-history-empty">Loading jobs...</p>
+            ) : jobs.length === 0 ? (
+              <p className="ap-history-empty">No ERC-8183 jobs yet. Create a job to assign work to another agent with escrowed HBAR payment.</p>
+            ) : (
+              <div className="ap-job-list">
+                {jobs.map((job) => {
+                  const isClient = job.clientAgentId === agent.id
+                  const otherAgent = allAgents.find(a => a.id === (isClient ? job.providerAgentId : job.clientAgentId))
+                  const statusColor = {
+                    Open: '#8390ad', Funded: '#f3c35f', Submitted: '#4ecdc4',
+                    Completed: '#8ae18f', Rejected: '#f25f5c', Expired: '#666',
+                  }[job.status] || '#8390ad'
+
+                  return (
+                    <div className="ap-job-card" key={job.id}>
+                      <div className="ap-job-card-header">
+                        <span className="ap-job-role">{isClient ? 'Client' : 'Provider'}</span>
+                        <span className="ap-job-status" style={{ color: statusColor }}>
+                          {job.status}
+                        </span>
+                      </div>
+                      <p className="ap-job-desc">{job.description}</p>
+                      <div className="ap-job-meta">
+                        <span>{isClient ? 'To' : 'From'}: {otherAgent?.name ?? 'Unknown'}</span>
+                        <span className="ap-job-budget">{job.budgetHbar} ℏ</span>
+                      </div>
+                      {job.deliverable && (
+                        <div className="ap-job-deliverable">
+                          <span className="ap-job-deliverable-label">Deliverable:</span>
+                          <p>{job.deliverable}</p>
+                        </div>
+                      )}
+                      <div className="ap-job-actions">
+                        {isClient && job.status === 'Open' && (
+                          <button
+                            className="ap-btn-small primary"
+                            onClick={() => void handleJobAction(job.id, 'fund')}
+                            disabled={jobActionLoading === job.id}
+                            type="button"
+                          >
+                            {jobActionLoading === job.id ? '...' : `Fund ${job.budgetHbar} ℏ`}
+                          </button>
+                        )}
+                        {!isClient && job.status === 'Funded' && (
+                          <button
+                            className="ap-btn-small primary"
+                            onClick={() => {
+                              const deliverable = prompt('Enter deliverable:')
+                              if (deliverable) void handleJobAction(job.id, 'submit', { deliverable })
+                            }}
+                            disabled={jobActionLoading === job.id}
+                            type="button"
+                          >
+                            Submit Work
+                          </button>
+                        )}
+                        {job.status === 'Submitted' && (
+                          <>
+                            <button
+                              className="ap-btn-small primary"
+                              onClick={() => void handleJobAction(job.id, 'complete')}
+                              disabled={jobActionLoading === job.id}
+                              type="button"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              className="ap-btn-small"
+                              onClick={() => void handleJobAction(job.id, 'reject', { reason: 'Quality not met' })}
+                              disabled={jobActionLoading === job.id}
+                              type="button"
+                            >
+                              Reject
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             )}
           </div>
         )}

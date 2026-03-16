@@ -56,13 +56,15 @@ type DashboardData = {
 
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
       const d = await requestJson<DashboardData>('/api/dashboard')
       setData(d)
+      setError(null)
     } catch (err) {
-      console.warn('[Dashboard] Failed to load data:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load dashboard')
     }
   }, [])
 
@@ -77,6 +79,29 @@ export default function Dashboard() {
     () => (data ? Math.max(...data.agentStats.map(a => a.executions), 1) : 1),
     [data],
   )
+
+  if (error && !data) {
+    return (
+      <div className="dashboard-loading">
+        <p style={{ color: '#f87171', marginBottom: 12 }}>{error}</p>
+        <button
+          onClick={() => void refresh()}
+          style={{
+            padding: '8px 16px',
+            borderRadius: 8,
+            border: '1px solid rgba(90, 214, 181, 0.3)',
+            background: 'rgba(90, 214, 181, 0.08)',
+            color: '#5ad6b5',
+            cursor: 'pointer',
+            fontSize: 13,
+            fontWeight: 600,
+          }}
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
 
   if (!data) {
     return (

@@ -17,6 +17,7 @@ import { requestJson, summarizeResultReferences, resolveWorkflowValue } from './
 import { useLiveData } from './hooks/useLiveData'
 import { useToolCatalog } from './hooks/useToolCatalog'
 import { WalletProvider, useWalletContext } from './contexts/WalletContext'
+import { useToast } from './hooks/useToast'
 
 import Landing from './components/Landing'
 import TopBar from './components/TopBar'
@@ -29,6 +30,7 @@ import OnboardingTour from './components/OnboardingTour'
 import DemoCoach from './components/DemoCoach'
 import Dashboard from './components/Dashboard'
 import FundModal from './components/FundModal'
+import AboutModal from './components/AboutModal'
 import { ToastProvider } from './components/Toast'
 
 // ─── Error Boundary ────────────────────────────
@@ -100,6 +102,7 @@ function App() {
     () => !localStorage.getItem('aivy-onboarded'),
   )
   const [demoCoachActive, setDemoCoachActive] = useState(false)
+  const [aboutOpen, setAboutOpen] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light'>(() =>
     (localStorage.getItem('aivy-theme') as 'dark' | 'light') ?? 'dark',
   )
@@ -117,7 +120,7 @@ function App() {
   // ─── Hooks ────────────────────────────────────
   const live = useLiveData()
   const toolCatalog = useToolCatalog()
-  const { wallet, connectWallet, disconnectWallet, sessionAccountId, logout, balanceVersion, invalidateBalances } = useWalletContext()
+  const { wallet, connectWallet, disconnectWallet, sessionAccountId, logout, authError, balanceVersion, invalidateBalances } = useWalletContext()
 
   // Derive user account ID from connected wallet or persisted session
   const userAccountId = wallet.status === 'connected' ? wallet.accountId : sessionAccountId
@@ -171,7 +174,6 @@ function App() {
           })
           walletFunded = true
         } catch (fundError) {
-          console.warn('[Aivy] Wallet funding failed:', fundError)
           const msg = fundError instanceof Error ? fundError.message : 'Unknown error'
           if (msg.includes('not connected') || msg.includes('No connected account') || msg.includes('USER_REJECTED')) {
             alert('Wallet funding cancelled. Your agent was created but not funded.\n\nYou can fund it from the agent\'s Info tab.')
@@ -191,7 +193,7 @@ function App() {
               targetAgentId: partnerId,
               message: `Hello! I'm ${payload.name}, a newly deployed agent. I've been linked to coordinate with you.`,
             }),
-          }).catch((err) => console.warn('[Aivy] Coordination greeting failed:', err))
+          }).catch(() => { /* coordination greeting failed — non-critical */ })
         }
       }
 
@@ -282,16 +284,22 @@ function App() {
     if (!selectedAgent) return
     setIsMutating(true)
     try {
-      await requestJson(`/api/agents/${selectedAgent.id}`, { method: 'DELETE' })
+      const result = await requestJson<{ ok: boolean; refundedHbar?: number; refundTxId?: string | null }>(
+        `/api/agents/${selectedAgent.id}`,
+        { method: 'DELETE' },
+      )
+      const refundMsg = result.refundedHbar && result.refundedHbar > 0
+        ? ` ${result.refundedHbar} HBAR refunded to your wallet.`
+        : ''
       setResultDrawer({
-        title: 'Agent removed',
-        message: `${selectedAgent.name} was removed from the live floor.`,
-        references: [],
+        title: 'Agent destroyed',
+        message: `${selectedAgent.name} was permanently removed.${refundMsg}`,
+        references: result.refundTxId ? [{ type: 'transaction' as const, value: result.refundTxId, mirrorUrl: `https://hashscan.io/testnet/transaction/${result.refundTxId}` }] : [],
       })
       setSelectedAgentId('')
       await live.refreshLive()
     } catch (error) {
-      live.setServerMessage(error instanceof Error ? error.message : 'Remove failed.')
+      live.setServerMessage(error instanceof Error ? error.message : 'Destroy failed.')
     } finally {
       setIsMutating(false)
     }
@@ -422,12 +430,18 @@ function App() {
 
   // ─── Landing View ─────────────────────────────
   if (view === 'landing') {
-    return <Landing onEnter={() => setView('office')} onTryDemo={handleTryDemo} />
+    return (
+      <>
+        <Landing onEnter={() => setView('office')} onTryDemo={handleTryDemo} onAbout={() => setAboutOpen(true)} />
+        <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
+      </>
+    )
   }
 
   // ─── Office View ──────────────────────────────
   return (
     <ToastProvider>
+    <AuthErrorNotifier authError={authError} />
     <div className="app-v2">
       <TopBar
         networkLabel={live.networkLabel}
@@ -437,6 +451,7 @@ function App() {
         activeView={view === 'dashboard' ? 'dashboard' : 'office'}
         onChangeView={(v) => setView(v)}
         onGoHome={() => setView('landing')}
+        onAbout={() => setAboutOpen(true)}
         demoMode={live.demoMode}
       />
 
@@ -572,9 +587,21 @@ function App() {
           onDismiss={() => setDemoCoachActive(false)}
         />
       )}
+
+      {/* ─── About Modal ────────────────────────── */}
+      <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
     </div>
     </ToastProvider>
   )
+}
+
+/** Surfaces wallet auth errors as toasts (must be inside ToastProvider) */
+function AuthErrorNotifier({ authError }: { authError: string | null }) {
+  const { addToast } = useToast()
+  useEffect(() => {
+    if (authError) addToast(authError, 'error')
+  }, [authError, addToast])
+  return null
 }
 
 function AppWithBoundary() {

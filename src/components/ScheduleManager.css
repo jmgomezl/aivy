@@ -159,6 +159,36 @@
   color: #5ad6b5;
 }
 
+.sm-schedule-label {
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+  color: #eef5ff;
+}
+
+.sm-status-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--color-muted, #5a6888);
+  margin-top: 1px;
+}
+
+.sm-active-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5ad6b5;
+  box-shadow: 0 0 6px rgba(90, 214, 181, 0.5);
+}
+
+.sm-paused-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5a6888;
+}
+
 .sm-desc {
   font-size: 11px;
   color: var(--color-text-soft, #b8c6e4);
@@ -198,6 +228,25 @@
 }
 .sm-run-btn:hover { color: #7de8cc; }
 .sm-run-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sm-run-now-btn {
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(90, 214, 181, 0.3);
+  background: rgba(90, 214, 181, 0.08);
+  color: #5ad6b5;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: 'Space Grotesk', sans-serif;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+.sm-run-now-btn:hover { background: rgba(90, 214, 181, 0.18); }
+.sm-run-now-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

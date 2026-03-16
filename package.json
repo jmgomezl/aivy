@@ -1,7 +1,7 @@
 {
   "name": "aivy",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "concurrently -k \"npm:dev:web\" \"npm:dev:server\"",
@@ -16,17 +16,23 @@
     "start:server": "node server-dist/index.js"
   },
   "dependencies": {
+    "@bonzofinancelabs/hak-bonzo-plugin": "^1.0.1",
+    "@buidlerlabs/hak-memejob-plugin": "^1.0.2",
     "@hashgraph/hedera-wallet-connect": "^2.0.6",
     "@hashgraph/sdk": "^2.80.0",
     "@hiero-ledger/proto": "^2.25.0",
     "@hiero-ledger/sdk": "^2.79.0",
     "better-sqlite3": "^11.10.0",
+    "chainlink-pricefeed-plugin": "^1.0.4",
+    "coincap-hedera-plugin": "^1.0.4",
     "concurrently": "^9.2.1",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "ethers": "^6.16.0",
     "express": "^5.2.1",
     "express-rate-limit": "^8.3.0",
+    "hak-pyth-plugin": "^0.1.1",
+    "hak-saucerswap-plugin": "^1.0.1",
     "hashconnect": "^3.0.14",
     "hedera-agent-kit": "^3.8.0",
     "jsonwebtoken": "^9.0.3",
@@ -37,6 +43,7 @@
     "react-dom": "^19.2.0",
     "solc": "^0.8.34",
     "tsx": "^4.21.0",
+    "viem": "^2.47.4",
     "zod": "^4.3.6"
   },
   "devDependencies": {

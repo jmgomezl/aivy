@@ -11,6 +11,25 @@ const PRESETS = [
   { label: 'Weekly Monday', cron: '0 9 * * 1' },
 ]
 
+/** Human-readable description of a cron expression */
+function describeCron(cron: string): string {
+  const cronMap: Record<string, string> = {
+    '0 * * * *': 'Every hour',
+    '*/30 * * * *': 'Every 30 minutes',
+    '*/15 * * * *': 'Every 15 minutes',
+    '*/5 * * * *': 'Every 5 minutes',
+    '0 */2 * * *': 'Every 2 hours',
+    '0 */3 * * *': 'Every 3 hours',
+    '0 */6 * * *': 'Every 6 hours',
+    '0 */12 * * *': 'Every 12 hours',
+    '0 0 * * *': 'Daily at midnight',
+    '0 9 * * *': 'Daily at 9 AM',
+    '0 9 * * 1': 'Every Monday at 9 AM',
+    '0 9 * * 1-5': 'Weekdays at 9 AM',
+  }
+  return cronMap[cron] ?? cron
+}
+
 type Props = {
   agentId: string
 }
@@ -112,13 +131,14 @@ export default function ScheduleManager({ agentId }: Props) {
         addToast(data.error ?? 'Execution failed', 'error')
       }
       await refresh()
-      // Auto-expand execution history
+      // Auto-expand execution history (capture id to avoid race condition)
+      const sid = schedule.id
       try {
         const execData = await requestJson<{ executions: ScheduleExecution[] }>(
-          `/api/agents/${agentId}/schedules/${schedule.id}/executions`,
+          `/api/agents/${agentId}/schedules/${sid}/executions`,
         )
-        setExecutions((prev) => ({ ...prev, [schedule.id]: execData.executions }))
-        setExpandedId(schedule.id)
+        setExecutions((prev) => ({ ...prev, [sid]: execData.executions }))
+        setExpandedId(sid)
       } catch { /* non-critical */ }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to run schedule'
@@ -208,30 +228,29 @@ export default function ScheduleManager({ agentId }: Props) {
           <div key={s.id} className={`sm-item ${s.enabled ? '' : 'disabled'}`}>
             <div className="sm-item-header">
               <div className="sm-item-info">
-                <span className="sm-cron">{s.cronExpression}</span>
+                <span className="sm-schedule-label">{describeCron(s.cronExpression)}</span>
                 {s.description && <span className="sm-desc">{s.description}</span>}
+                <span className="sm-status-line">
+                  {s.enabled ? (
+                    <span className="sm-active-dot" />
+                  ) : (
+                    <span className="sm-paused-dot" />
+                  )}
+                  {s.enabled ? 'Active' : 'Paused'}
+                </span>
               </div>
               <div className="sm-item-actions">
                 <button
-                  className="sm-run-btn"
+                  className="sm-run-now-btn"
                   onClick={() => handleRunNow(s)}
                   disabled={runningId === s.id}
-                  title="Run now"
                 >
-                  {runningId === s.id ? (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="sm-spin">
-                      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-                    </svg>
-                  ) : (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                      <polygon points="6,3 20,12 6,21" />
-                    </svg>
-                  )}
+                  {runningId === s.id ? 'Running...' : 'Run Now'}
                 </button>
                 <button
                   className={`sm-toggle ${s.enabled ? 'on' : 'off'}`}
                   onClick={() => handleToggle(s)}
-                  title={s.enabled ? 'Pause' : 'Resume'}
+                  title={s.enabled ? 'Pause schedule' : 'Resume schedule'}
                 >
                   {s.enabled ? 'ON' : 'OFF'}
                 </button>

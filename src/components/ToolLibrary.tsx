@@ -302,14 +302,14 @@ export default function ToolLibrary({
   }
 
   return (
-    <div className="tl-overlay" onClick={onClose}>
+    <div className="tl-overlay" role="dialog" aria-modal="true" aria-label="Tool Library" onClick={onClose}>
       <div className="tl-modal" onClick={(e) => e.stopPropagation()}>
         <div className="tl-header">
           <div>
             <span className="tl-kicker">Tool Library</span>
             <h2>{agent.name}</h2>
           </div>
-          <button className="dm-close" onClick={onClose} type="button">
+          <button className="dm-close" onClick={onClose} type="button" aria-label="Close">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
           </button>
         </div>
@@ -354,68 +354,70 @@ export default function ToolLibrary({
             </div>
           </aside>
 
-          <section className="tl-detail">
+          <section className="tl-detail-wrapper">
             {selectedTool ? (
               <>
-                <div className="tl-detail-head">
-                  <div>
-                    <span className="tl-kicker">{selectedGroup?.label ?? 'Tool'}</span>
-                    <h3>{selectedTool.label}</h3>
-                  </div>
-                  <span className="tl-badge">{selectedTool.kind === 'query' ? 'Read' : 'Write'}</span>
-                </div>
-
-                <p className="tl-desc">{selectedTool.description}</p>
-
-                {workflows.some((w) => w.toolName === selectedTool.name) && (
-                  <div className="tl-flows">
-                    <span className="tl-kicker">Ready-made flows</span>
-                    <div className="tl-flow-row">
-                      {workflows.filter((w) => w.toolName === selectedTool.name).map((w) => (
-                        <button className="ap-workflow" key={w.id} onClick={() => runWorkflow(w)} type="button">
-                          <strong>{w.title}</strong>
-                          <p>{w.description}</p>
-                        </button>
-                      ))}
+                <div className="tl-detail">
+                  <div className="tl-detail-head">
+                    <div>
+                      <span className="tl-kicker">{selectedGroup?.label ?? 'Tool'}</span>
+                      <h3>{selectedTool.label}</h3>
                     </div>
+                    <span className="tl-badge">{selectedTool.kind === 'query' ? 'Read' : 'Write'}</span>
                   </div>
-                )}
 
-                {selectedTool.parameterHints.length > 0 && (
-                  <div className="tl-hints">
-                    {selectedTool.parameterHints.map((h) => <div className="tl-hint" key={h}>{h}</div>)}
-                  </div>
-                )}
+                  <p className="tl-desc">{selectedTool.description}</p>
 
-                <div className="tl-editor">
-                  <div className="tl-editor-head">
-                    <span className="tl-kicker">{selectedTool.form && editorMode === 'guided' ? 'Guided form' : 'Advanced JSON'}</span>
-                    <div className="tl-editor-actions">
-                      {selectedTool.form && (
-                        <>
-                          <button className={editorMode === 'guided' ? 'tl-small-btn is-active' : 'tl-small-btn'} onClick={() => switchMode('guided')} type="button">Guided</button>
-                          <button className={editorMode === 'json' ? 'tl-small-btn is-active' : 'tl-small-btn'} onClick={() => switchMode('json')} type="button">JSON</button>
-                        </>
-                      )}
-                      <button className="tl-small-btn" onClick={() => primeToolState(selectedTool)} type="button">Reset</button>
+                  {workflows.some((w) => w.toolName === selectedTool.name) && (
+                    <div className="tl-flows">
+                      <span className="tl-kicker">Ready-made flows</span>
+                      <div className="tl-flow-row">
+                        {workflows.filter((w) => w.toolName === selectedTool.name).map((w) => (
+                          <button className="ap-workflow" key={w.id} onClick={() => runWorkflow(w)} type="button">
+                            <strong>{w.title}</strong>
+                            <p>{w.description}</p>
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-
-                  {selectedTool.form && editorMode === 'guided' ? (
-                    <div className="tl-form-grid">{selectedTool.form.fields.map((f) => renderField(f))}</div>
-                  ) : (
-                    <textarea className="tl-json" onChange={(e) => setParamsText(e.target.value)} value={paramsText} />
                   )}
-                </div>
 
-                {isRunning && (
-                  <div className="tl-running-indicator">
-                    <span className="tl-spinner" />
-                    <span>Executing on Hedera testnet...</span>
+                  {selectedTool.parameterHints.length > 0 && (
+                    <div className="tl-hints">
+                      {selectedTool.parameterHints.map((h) => <div className="tl-hint" key={h}>{h}</div>)}
+                    </div>
+                  )}
+
+                  <div className="tl-editor">
+                    <div className="tl-editor-head">
+                      <span className="tl-kicker">{selectedTool.form && editorMode === 'guided' ? 'Guided form' : 'Advanced JSON'}</span>
+                      <div className="tl-editor-actions">
+                        {selectedTool.form && (
+                          <>
+                            <button className={editorMode === 'guided' ? 'tl-small-btn is-active' : 'tl-small-btn'} onClick={() => switchMode('guided')} type="button">Guided</button>
+                            <button className={editorMode === 'json' ? 'tl-small-btn is-active' : 'tl-small-btn'} onClick={() => switchMode('json')} type="button">JSON</button>
+                          </>
+                        )}
+                        <button className="tl-small-btn" onClick={() => primeToolState(selectedTool)} type="button">Reset</button>
+                      </div>
+                    </div>
+
+                    {selectedTool.form && editorMode === 'guided' ? (
+                      <div className="tl-form-grid">{selectedTool.form.fields.map((f) => renderField(f))}</div>
+                    ) : (
+                      <textarea className="tl-json" onChange={(e) => setParamsText(e.target.value)} value={paramsText} />
+                    )}
                   </div>
-                )}
 
-                {resultMessage && !isRunning && <div className="tl-result">{resultMessage}</div>}
+                  {isRunning && (
+                    <div className="tl-running-indicator">
+                      <span className="tl-spinner" />
+                      <span>Executing on Hedera testnet...</span>
+                    </div>
+                  )}
+
+                  {resultMessage && !isRunning && <div className="tl-result">{resultMessage}</div>}
+                </div>
 
                 <div className="tl-footer">
                   <button className="dm-deploy" onClick={handleRun} disabled={isRunning} type="button">

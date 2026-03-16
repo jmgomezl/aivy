@@ -13,6 +13,12 @@ export type CapabilityGroupId =
   | 'contractQueries'
   | 'networkQueries'
   | 'transactionQueries'
+  | 'saucerswap'
+  | 'pyth'
+  | 'memejob'
+  | 'bonzo'
+  | 'coincap'
+  | 'chainlink'
 
 export type AgentTemplate = {
   id: string
@@ -255,6 +261,24 @@ export type AgentSpendingResponse = {
   summary: { totalSpent: number; totalFunded: number; txCount: number }
   burnRatePerDay: number
   records: SpendingRecord[]
+}
+
+// ─── Job Types (ERC-8183) ────────────────────────────
+export type JobRecord = {
+  id: string
+  jobChainId: number
+  clientAgentId: string
+  providerAgentId: string
+  evaluatorAddress: string | null
+  description: string
+  budgetHbar: number
+  expiredAt: string
+  status: 'Open' | 'Funded' | 'Submitted' | 'Completed' | 'Rejected' | 'Expired'
+  deliverable: string | null
+  contractId: string | null
+  txId: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 // ─── Schedule Types ──────────────────────────────────

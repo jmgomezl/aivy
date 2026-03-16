@@ -27,13 +27,15 @@ const suggestedPrompts: Record<string, string[]> = {
     'Check my HBAR balance',
     'Show account info',
     'Transfer 5 HBAR to 0.0.5678',
-    'Exchange rate?',
+    'Get the price of HBAR from Chainlink',
   ],
   'yield-router': [
     'Create token HackCoin',
     'Mint 500 tokens',
     'Deploy ERC20 contract',
     'Token balances',
+    'Get the price of HBAR from Pyth',
+    'Get the price of BTC from Chainlink',
   ],
   'compliance-clerk': [
     'Audit my account',
@@ -174,6 +176,18 @@ export default function ChatPanel({ agent, userAccountId, onAgentReply, onRefres
     [sendMessage],
   )
 
+  const clearChat = useCallback(async () => {
+    try {
+      await requestJson(`/api/agents/${agent.id}/chat`, { method: 'DELETE' })
+      setMessages([{
+        id: 'welcome',
+        role: 'assistant',
+        content: welcomeMessages[agent.templateId] ?? welcomeMessages['treasury-sentinel'],
+        timestamp: new Date().toISOString(),
+      }])
+    } catch { /* ignore */ }
+  }, [agent.id, agent.templateId])
+
   const allPrompts = suggestedPrompts[agent.templateId] ?? suggestedPrompts['treasury-sentinel']
   // Filter out prompts the user already sent
   const usedTexts = new Set(messages.filter((m) => m.role === 'user').map((m) => m.content))
@@ -214,6 +228,17 @@ export default function ChatPanel({ agent, userAccountId, onAgentReply, onRefres
       </div>
 
       <div className="chat-input-row">
+        <button
+          className="chat-clear"
+          onClick={clearChat}
+          type="button"
+          aria-label="Clear chat history"
+          title="Clear chat"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" />
+          </svg>
+        </button>
         <textarea
           ref={inputRef}
           className="chat-input"

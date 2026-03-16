@@ -273,6 +273,27 @@
   opacity: 0.5;
 }
 
+.chat-clear {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  align-self: center;
+}
+
+.chat-clear:hover {
+  background: rgba(242, 95, 92, 0.15);
+  color: #f25f5c;
+}
+
 .chat-send {
   width: 40px;
   height: 40px;

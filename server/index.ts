@@ -9,15 +9,25 @@ import OpenAI from 'openai'
 import {
   AgentMode,
   HederaAIToolkit,
+  coreAccountPlugin,
   coreAccountPluginToolNames,
+  coreAccountQueryPlugin,
   coreAccountQueryPluginToolNames,
+  coreConsensusPlugin,
   coreConsensusPluginToolNames,
+  coreConsensusQueryPlugin,
   coreConsensusQueryPluginToolNames,
+  coreEVMPlugin,
   coreEVMPluginToolNames,
+  coreEVMQueryPlugin,
   coreEVMQueryPluginToolNames,
+  coreMiscQueriesPlugin,
   coreMiscQueriesPluginsToolNames,
+  coreTokenPlugin,
   coreTokenPluginToolNames,
+  coreTokenQueryPlugin,
   coreTokenQueryPluginToolNames,
+  coreTransactionQueryPlugin,
   coreTransactionQueryPluginToolNames,
 } from 'hedera-agent-kit'
 import {
@@ -39,6 +49,92 @@ import { authMiddleware, requireAuth, type AuthRequest } from './middleware.js'
 import { deployLimiter, chatLimiter, toolLimiter, readLimiter, authLimiter } from './rateLimiter.js'
 import { startSchedule, stopSchedule, stopAllSchedules, validateCron, acquireAgentLock, releaseAgentLock } from './scheduler.js'
 import { startPoller, stopPoller } from './eventPoller.js'
+import { saucerswapPlugin } from 'hak-saucerswap-plugin'
+import { pythPlugin } from 'hak-pyth-plugin'
+import { memejobPlugin } from '@buidlerlabs/hak-memejob-plugin'
+import { bonzoPlugin } from '@bonzofinancelabs/hak-bonzo-plugin'
+// coincap-hedera-plugin & chainlink-pricefeed-plugin have broken ESM packaging
+// (they use `import` syntax in .js files without "type": "module").
+// We inline lightweight plugin wrappers that replicate their tool logic directly.
+import { ethers } from 'ethers'
+import axios from 'axios'
+
+// Patch the global axios.create to inject x-api-key for SaucerSwap instances.
+// The hak-saucerswap-plugin calls axios.create({ baseURL: "https://api.saucerswap.finance" })
+// and the API now requires an API key via x-api-key header.
+if (process.env.SAUCERSWAP_API_KEY) {
+  const _origCreate = axios.create.bind(axios)
+  axios.create = function patchedCreate(config?: Parameters<typeof _origCreate>[0]) {
+    const instance = _origCreate(config)
+    if (config?.baseURL?.includes('saucerswap.finance')) {
+      instance.defaults.headers.common['x-api-key'] = process.env.SAUCERSWAP_API_KEY!
+    }
+    return instance
+  } as typeof axios.create
+}
+
+const CoinCapHederaPlugin = {
+  name: 'CoinCapHederaPlugin',
+  version: '1.0.1',
+  description: 'Get the current HBAR price in USD via CoinCap API.',
+  tools: () => [{
+    method: 'get_hbar_price_in_USD_tool',
+    name: 'get HBAR price in USD Tool',
+    description: 'Get the current HBAR price in USD from CoinCap API. No parameters required.',
+    parameters: z.object({}),
+    execute: async () => {
+      const res = await fetch('https://rest.coincap.io/v3/price/bysymbol/hbar', {
+        headers: {
+          Authorization: `Bearer ${process.env.COINCAP_BEARER_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+      })
+      if (!res.ok) throw new Error(`CoinCap HTTP ${res.status}`)
+      const json = (await res.json()) as { data: string[] }
+      const price = Number(json.data[0])
+      return { humanMessage: `Current HBAR price: $${price.toFixed(4)} USD`, raw: { price } }
+    },
+  }],
+}
+
+const CHAINLINK_FEEDS: Record<string, string> = {
+  BTC: '0x058fe79cb5775d4b167920ca6036b824805a9abd',
+  ETH: '0xb9d461e0b962af219866adfa7dd19c52bb9871b9',
+  HBAR: '0x59bc155eb6c6c415fe43255af66ecf0523c92b4a',
+  LINK: '0xeb93a53c648e3e89bc0fc327d36a37619b1cf0cd',
+  USDC: '0x2946220288dbaec91a26c772f5a1bb7b191c1a73',
+  USDT: '0x1c5275a77d74c89256801322e9a52a991c68e79b',
+  DAI: '0xb7546c6ebfc0b6b4fe68909734d7e2c1c5a3ffdf',
+}
+const AGGREGATOR_ABI = [
+  'function latestRoundData() view returns (uint80,int256,uint256,uint256,uint80)',
+  'function decimals() view returns (uint8)',
+]
+
+const ChainlinkPriceFeedPlugin = {
+  name: 'ChainlinkPriceFeedPlugin',
+  version: '1.0.0',
+  description: 'Query Chainlink Price Feed oracles on Hedera Testnet.',
+  tools: () => [{
+    method: 'get_chainlink_price_feed_tool',
+    name: 'get Chainlink price feed Tool',
+    description: 'Get a price feed from a Chainlink oracle on Hedera Testnet. Params: coinId (BTC, ETH, HBAR, LINK, USDC, USDT, DAI).',
+    parameters: z.object({ coinId: z.string() }),
+    execute: async (_client: unknown, _context: unknown, params: { coinId: string }) => {
+      const addr = CHAINLINK_FEEDS[params.coinId]
+      if (!addr) throw new Error(`Unknown coinId: ${params.coinId}. Supported: ${Object.keys(CHAINLINK_FEEDS).join(', ')}`)
+      const provider = new ethers.JsonRpcProvider('https://testnet.hashio.io/api')
+      const contract = new ethers.Contract(addr, AGGREGATOR_ABI, provider)
+      const [roundId, answer, , updatedAt] = await contract.latestRoundData()
+      const decimals = await contract.decimals()
+      const price = Number(answer) / Math.pow(10, Number(decimals))
+      return {
+        humanMessage: `${params.coinId}/USD: $${price.toFixed(Number(decimals))}`,
+        raw: { coinId: params.coinId, contractAddress: addr, price: price.toString(), decimals: Number(decimals), roundId: roundId.toString(), updatedAt: new Date(Number(updatedAt) * 1000).toISOString() },
+      }
+    },
+  }],
+}
 
 dotenv.config()
 initMasterKey()
@@ -75,7 +171,24 @@ const capabilityGroupIds = [
   'contractQueries',
   'networkQueries',
   'transactionQueries',
+  'saucerswap',
+  'pyth',
+  'memejob',
+  'bonzo',
+  'coincap',
+  'chainlink',
 ] as const
+
+// Third-party plugin tool names — always use .method (the snake_case identifier
+// that HederaAIToolkit registers internally), never .name (display label with spaces)
+const sanitizeToolName = (n: string) => n.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '')
+const saucerswapTools = saucerswapPlugin.tools().map((t: { method: string }) => t.method)
+const pythTools = pythPlugin.tools().map((t: { method: string }) => t.method)
+const memejobTools = memejobPlugin.tools().map((t: { method: string }) => t.method)
+const bonzoTools = bonzoPlugin.tools().map((t: { method: string }) => t.method)
+// CoinCap & Chainlink plugins have broken ESM packaging — hardcode their single tool names
+const coincapTools = ['get_hbar_price_in_USD_tool']
+const chainlinkTools = ['get_chainlink_price_feed_tool']
 
 type CapabilityGroupId = (typeof capabilityGroupIds)[number]
 type ActivityTone = 'system' | 'success' | 'vault'
@@ -210,6 +323,27 @@ console.log(`[Aivy] ${startupDeployments.length} agent(s) loaded from database.`
 // ─── Chat (OpenAI) ───────────────────────────────
 const chatEnabled = !!process.env.OPENAI_API_KEY
 const openai = chatEnabled ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null
+
+// Retry wrapper for OpenAI calls to handle 429 rate-limit errors
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn()
+    } catch (err: unknown) {
+      const status = (err as { status?: number }).status
+      if (status === 429 && attempt < maxRetries) {
+        // Parse retry-after header; fall back to exponential backoff (3s, 6s, 12s, 24s, 48s)
+        const retryAfter = Number((err as { headers?: Record<string, string> }).headers?.['retry-after']) || 0
+        const delay = Math.max(retryAfter * 1000, 3000 * Math.pow(2, attempt))
+        console.log(`[chat] Rate limited, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`)
+        await new Promise(r => setTimeout(r, delay))
+        continue
+      }
+      throw err
+    }
+  }
+  throw new Error('withRetry: unreachable')
+}
 
 const templateMissions: Record<string, { tagline: string; mission: string }> = {
   'treasury-sentinel': {
@@ -365,7 +499,7 @@ function buildOpenAITools(agentTools: ToolCatalogEntry[], userAccountId?: string
     return {
       type: 'function' as const,
       function: {
-        name: tool.name,
+        name: sanitizeToolName(tool.name),
         description: tool.description.slice(0, 1024),
         parameters: {
           type: 'object',
@@ -458,6 +592,48 @@ const capabilityGroups: ToolCatalogGroup[] = [
     tone: 'blue',
     tools: allTransactionQueryTools,
   },
+  {
+    id: 'saucerswap',
+    label: 'SaucerSwap DEX',
+    description: 'Token swaps, liquidity pools, and yield farming on SaucerSwap.',
+    tone: 'teal',
+    tools: saucerswapTools,
+  },
+  {
+    id: 'pyth',
+    label: 'Pyth Oracle',
+    description: 'Real-time price feeds from Pyth Network (400+ assets).',
+    tone: 'amber',
+    tools: pythTools,
+  },
+  {
+    id: 'memejob',
+    label: 'Memejob',
+    description: 'Create, buy, and sell meme tokens on the Memejob protocol.',
+    tone: 'rose',
+    tools: memejobTools,
+  },
+  {
+    id: 'bonzo',
+    label: 'Bonzo Finance',
+    description: 'Decentralised lending and borrowing on Hedera via Bonzo (Aave v2).',
+    tone: 'teal',
+    tools: bonzoTools,
+  },
+  {
+    id: 'coincap',
+    label: 'CoinCap',
+    description: 'Get real-time HBAR price in USD from CoinCap API.',
+    tone: 'amber',
+    tools: coincapTools,
+  },
+  {
+    id: 'chainlink',
+    label: 'Chainlink Oracles',
+    description: 'Price feeds from Chainlink decentralised oracles (BTC, ETH, HBAR, LINK, USDC, USDT, DAI).',
+    tone: 'blue',
+    tools: chainlinkTools,
+  },
 ]
 
 const defaultCapabilityGroupsByTemplate: Record<string, CapabilityGroupId[]> = {
@@ -468,6 +644,8 @@ const defaultCapabilityGroupsByTemplate: Record<string, CapabilityGroupId[]> = {
     'consensusQueries',
     'transactionQueries',
     'networkQueries',
+    'coincap',
+    'chainlink',
   ],
   'yield-router': [
     'accounts',
@@ -478,6 +656,12 @@ const defaultCapabilityGroupsByTemplate: Record<string, CapabilityGroupId[]> = {
     'contractQueries',
     'transactionQueries',
     'networkQueries',
+    'saucerswap',
+    'pyth',
+    'bonzo',
+    'memejob',
+    'coincap',
+    'chainlink',
   ],
   'compliance-clerk': [
     'accountQueries',
@@ -486,6 +670,8 @@ const defaultCapabilityGroupsByTemplate: Record<string, CapabilityGroupId[]> = {
     'contractQueries',
     'transactionQueries',
     'networkQueries',
+    'coincap',
+    'chainlink',
   ],
   'governance-relay': [
     'accounts',
@@ -503,12 +689,18 @@ const suggestedToolsByTemplate: Record<string, string[]> = {
     coreAccountQueryPluginToolNames.GET_HBAR_BALANCE_QUERY_TOOL,
     coreConsensusPluginToolNames.CREATE_TOPIC_TOOL,
     coreConsensusPluginToolNames.SUBMIT_TOPIC_MESSAGE_TOOL,
+    ...coincapTools,
+    ...chainlinkTools,
   ],
   'yield-router': [
     coreTokenPluginToolNames.CREATE_FUNGIBLE_TOKEN_TOOL,
     coreTokenPluginToolNames.MINT_FUNGIBLE_TOKEN_TOOL,
     coreEVMPluginToolNames.CREATE_ERC20_TOOL,
     coreEVMPluginToolNames.TRANSFER_ERC20_TOOL,
+    ...saucerswapTools.slice(0, 2),
+    ...pythTools.slice(0, 1),
+    ...bonzoTools.slice(0, 2),
+    ...memejobTools.slice(0, 1),
   ],
   'compliance-clerk': [
     coreAccountQueryPluginToolNames.GET_ACCOUNT_QUERY_TOOL,
@@ -627,6 +819,99 @@ const toolExampleMap: Record<string, Record<string, unknown>> = {
   get_exchange_rate_tool: {},
   get_transaction_record_query_tool: {
     transactionId: `${config.operatorAccountId}@1234567890.000000000`,
+  },
+
+  // ── SaucerSwap plugin ────────────────────────────
+  saucerswap_swap_tokens: {
+    fromToken: 'HBAR',
+    toToken: '0.0.456858',
+    amount: '10',
+    slippageTolerance: 0.5,
+  },
+  saucerswap_get_swap_quote: {
+    fromToken: 'HBAR',
+    toToken: '0.0.456858',
+    amount: '10',
+    slippageTolerance: 0.5,
+  },
+  saucerswap_get_pools: {
+    tokenA: 'HBAR',
+    tokenB: '0.0.456858',
+    version: 'v1',
+    limit: 10,
+  },
+  saucerswap_add_liquidity: {
+    tokenA: 'HBAR',
+    tokenB: '0.0.456858',
+    amountA: '10',
+    amountB: '50',
+    slippageTolerance: 0.5,
+  },
+  saucerswap_remove_liquidity: {
+    tokenA: 'HBAR',
+    tokenB: '0.0.456858',
+    lpTokenAmount: '100',
+    minAmountA: '5',
+    minAmountB: '25',
+  },
+  saucerswap_get_farms: {
+    poolId: 1,
+  },
+
+  // ── Pyth plugin ──────────────────────────────────
+  pyth_list_price_feeds: {
+    query: 'BTC',
+  },
+  pyth_get_latest_price: {
+    symbol: 'HBAR/USD',
+  },
+  pyth_get_latest_prices: {
+    symbols: ['BTC/USD', 'ETH/USD'],
+  },
+
+  // ── Memejob plugin ──────────────────────────────
+  create_memejob_token_tool: {
+    required: { name: 'MyCoin', symbol: 'MYCN', memo: 'ipfs://metadata' },
+    optional: { amount: 0, distributeRewards: true },
+  },
+  buy_memejob_token_tool: {
+    required: { tokenId: '0.0.1234', amount: 100 },
+    optional: { autoAssociate: true },
+  },
+  sell_memejob_token_tool: {
+    required: { tokenId: '0.0.1234', amount: 50 },
+    optional: { instant: true },
+  },
+
+  // ── Bonzo plugin ─────────────────────────────────
+  bonzo_market_data_tool: {},
+  approve_erc20_tool: {
+    required: { tokenSymbol: 'USDC', amount: '1000' },
+    optional: { useMax: false },
+  },
+  bonzo_deposit_tool: {
+    required: { tokenSymbol: 'USDC', amount: '100' },
+    optional: { referralCode: 0 },
+  },
+  bonzo_withdraw_tool: {
+    required: { tokenSymbol: 'USDC', amount: '50' },
+    optional: { withdrawAll: false },
+  },
+  bonzo_borrow_tool: {
+    required: { tokenSymbol: 'USDC', amount: '200', rateMode: 'variable' },
+    optional: { referralCode: 0 },
+  },
+  bonzo_repay_tool: {
+    required: { tokenSymbol: 'USDC', amount: '100', rateMode: 'variable' },
+    optional: { repayAll: false },
+  },
+
+  // ── CoinCap plugin ──────────────────────────────
+  get_hbar_price_in_USD_tool: {},
+
+  // ── Chainlink plugin ────────────────────────────
+  get_chainlink_price_feed_tool: {
+    coinId: 'HBAR',
   },
 }
 
@@ -1451,6 +1736,30 @@ const parseParameterHints = (description: string) => {
 const fallbackToolDescription = (toolName: string) =>
   `${titleCase(toolName)} is available in the current Hedera Agent Kit installation.`
 
+/** Enriched descriptions for plugin tools whose originals are too vague for OpenAI */
+const toolDescriptionOverrides: Record<string, string> = {
+  saucerswap_swap_tokens: 'Execute a token swap on SaucerSwap DEX. Params: fromToken (token ID or "HBAR"), toToken (token ID), amount (decimal string), slippageTolerance (number, default 0.5).',
+  saucerswap_get_swap_quote: 'Get a price quote for swapping tokens on SaucerSwap. Params: fromToken (token ID or "HBAR"), toToken (token ID), amount (decimal string), slippageTolerance (number, default 0.5).',
+  saucerswap_get_pools: 'Query SaucerSwap liquidity pools. Params: tokenA (token ID or symbol), tokenB (token ID or symbol), version ("v1" or "v2"), limit (number).',
+  saucerswap_add_liquidity: 'Add liquidity to a SaucerSwap pool. Params: tokenA, tokenB (token IDs), amountA, amountB (decimal strings), slippageTolerance (default 0.5).',
+  saucerswap_remove_liquidity: 'Remove liquidity from a SaucerSwap pool. Params: tokenA, tokenB (token IDs), lpTokenAmount, minAmountA, minAmountB (decimal strings).',
+  saucerswap_get_farms: 'Get active farming opportunities on SaucerSwap. Params: poolId (optional number to filter).',
+  pyth_list_price_feeds: 'List available Pyth price feeds. Params: query (string to filter by symbol, e.g. "BTC" or "HBAR").',
+  pyth_get_latest_price: 'Get the latest price from Pyth oracle for a given symbol. Params: symbol (e.g. "HBAR/USD", "BTC/USD") OR priceFeedId (hex string).',
+  pyth_get_latest_prices: 'Get latest prices from Pyth oracle for multiple symbols. Params: symbols (array of strings, e.g. ["BTC/USD","ETH/USD"]).',
+  create_memejob_token_tool: 'Create a new meme token on Memejob. Params: required { name, symbol, memo (IPFS path) }, optional { amount, distributeRewards }.',
+  buy_memejob_token_tool: 'Buy a meme token on Memejob. Params: required { tokenId (string), amount (number) }, optional { autoAssociate }.',
+  sell_memejob_token_tool: 'Sell a meme token on Memejob. Params: required { tokenId (string), amount (number) }, optional { instant }.',
+  bonzo_market_data_tool: 'Get Bonzo Finance lending market data and interest rates. No required params.',
+  approve_erc20_tool: 'Approve ERC-20 token spending on Bonzo. Params: required { tokenSymbol, amount }, optional { useMax }.',
+  bonzo_deposit_tool: 'Deposit tokens into Bonzo lending protocol. Params: required { tokenSymbol, amount }.',
+  bonzo_withdraw_tool: 'Withdraw tokens from Bonzo lending protocol. Params: required { tokenSymbol, amount }, optional { withdrawAll }.',
+  bonzo_borrow_tool: 'Borrow tokens from Bonzo lending protocol. Params: required { tokenSymbol, amount, rateMode ("variable" or "stable") }.',
+  bonzo_repay_tool: 'Repay borrowed tokens on Bonzo lending protocol. Params: required { tokenSymbol, amount, rateMode }, optional { repayAll }.',
+  get_hbar_price_in_USD_tool: 'Get the current HBAR price in USD from CoinCap API. No params required.',
+  get_chainlink_price_feed_tool: 'Get a price feed from Chainlink oracle on Hedera. Params: coinId (string, e.g. "HBAR", "BTC", "ETH", "LINK", "USDC", "USDT", "DAI").',
+}
+
 let toolCatalogCache: {
   groups: ToolCatalogGroup[]
   tools: ToolCatalogEntry[]
@@ -1469,6 +1778,26 @@ const getToolkit = (tools = allToolNames, agentClient?: Client) => {
     client: c,
     configuration: {
       tools,
+      // When custom plugins are registered, PluginRegistry skips core plugins,
+      // so we must explicitly include every core plugin alongside third-party ones.
+      plugins: [
+        coreAccountPlugin,
+        coreAccountQueryPlugin,
+        coreConsensusPlugin,
+        coreConsensusQueryPlugin,
+        coreEVMPlugin,
+        coreEVMQueryPlugin,
+        coreMiscQueriesPlugin,
+        coreTokenPlugin,
+        coreTokenQueryPlugin,
+        coreTransactionQueryPlugin,
+        saucerswapPlugin,
+        pythPlugin,
+        memejobPlugin,
+        bonzoPlugin,
+        CoinCapHederaPlugin,
+        ChainlinkPriceFeedPlugin,
+      ],
       context: {
         mode: AgentMode.AUTONOMOUS,
       },
@@ -1485,9 +1814,9 @@ const buildToolCatalog = () => {
 
   const tools: ToolCatalogEntry[] = allToolNames.map((toolName) => {
     const runtimeTool = runtimeTools[toolName]
-    const description = String(runtimeTool?.description ?? fallbackToolDescription(toolName))
-      .replace(/\s+/g, ' ')
-      .trim()
+    const description = String(
+      toolDescriptionOverrides[toolName] ?? runtimeTool?.description ?? fallbackToolDescription(toolName),
+    ).replace(/\s+/g, ' ').trim()
 
     return {
       name: toolName,
@@ -1528,15 +1857,32 @@ const executeTool = async (toolName: string, params: Record<string, unknown>, ag
   const result = await execute(params)
 
   // HederaAIToolkit wraps results in JSON.stringify — parse back to object
+  let parsed: Record<string, unknown>
   if (typeof result === 'string') {
     try {
-      return JSON.parse(result) as ToolResponse
+      parsed = JSON.parse(result)
     } catch {
       return { raw: {}, humanMessage: result } as ToolResponse
     }
+  } else {
+    parsed = result as Record<string, unknown>
   }
 
-  return result as ToolResponse
+  // If the result already has humanMessage/raw, return as-is
+  if ('humanMessage' in parsed || 'raw' in parsed) {
+    return parsed as ToolResponse
+  }
+
+  // Plugin-native format: { success, error, ... } → normalize to ToolResponse
+  if (parsed.success === false && typeof parsed.error === 'string') {
+    throw new Error(parsed.error)
+  }
+
+  // Successful plugin result without humanMessage — synthesize one
+  const humanMsg = typeof parsed.message === 'string'
+    ? parsed.message
+    : (parsed.success === true ? `${toolName} completed successfully.` : JSON.stringify(parsed).slice(0, 200))
+  return { raw: parsed, humanMessage: humanMsg } as ToolResponse
 }
 
 /** Detect HBAR spending from tool name + params */
@@ -1556,8 +1902,11 @@ function detectSpendingAmount(toolName: string, params: Record<string, unknown>)
 const makeMirrorUrl = (type: ResultReference['type'], value: string) => {
   const encoded = encodeURIComponent(value)
   switch (type) {
-    case 'transaction':
-      return `${config.mirrorNodeUrl}/transactions?transaction.id=${encoded}`
+    case 'transaction': {
+      // Mirror Node path format: 0.0.XXXXX-SECONDS-NANOS (replace @ with - and first . after @ with -)
+      const mirrorTxId = value.replace('@', '-').replace(/\.(\d+)$/, '-$1')
+      return `${config.mirrorNodeUrl}/transactions/${encodeURIComponent(mirrorTxId)}`
+    }
     case 'topic':
       return `${config.mirrorNodeUrl}/topics/${encoded}`
     case 'contract':
@@ -1725,7 +2074,7 @@ const deployJobManagerContract = async () => {
   }
 
   const transaction = await new ContractCreateFlow()
-    .setGas(2_500_000)
+    .setGas(4_000_000)
     .setBytecode(compiledJobManager.bytecode)
     .execute(client)
   const receipt = await transaction.getReceipt(client)
@@ -2009,6 +2358,15 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
       initialFundingHbar,
       fundingSource,
     } = parsed.data
+
+    // Prevent duplicate agent names per user
+    const userId = (request as AuthenticatedRequest).userId!
+    const existing = db.getDeploymentsByUser(userId)
+    if (existing.some((d) => d.name.toLowerCase() === name.trim().toLowerCase())) {
+      response.status(409).json({ error: `An agent named "${name.trim()}" already exists. Please choose a different name.` })
+      return
+    }
+
     const capabilitySelection =
       chosenGroups.length > 0
         ? chosenGroups
@@ -2584,7 +2942,7 @@ app.post('/api/agents/:agentId/pause', requireAuth, async (request, response) =>
   }
 })
 
-app.delete('/api/agents/:agentId', requireAuth, (request, response) => {
+app.delete('/api/agents/:agentId', requireAuth, async (request, response) => {
   const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) {
     response.status(404).json({ error: 'Deployment not found.' })
@@ -2595,11 +2953,62 @@ app.delete('/api/agents/:agentId', requireAuth, (request, response) => {
     return
   }
 
+  let refundedHbar = 0
+  let refundTxId: string | null = null
+
+  // Auto-refund remaining HBAR from dedicated agent accounts
+  if (deployment.walletType === 'dedicated' && deployment.agentAccountId && deployment.agentPrivateKey && !demoMode) {
+    try {
+      const agentClient = createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey)
+      // Query the agent's on-chain balance
+      const balanceResult = await executeTool('get_hbar_balance_query_tool', { accountId: deployment.agentAccountId })
+      const rawBalance = balanceResult.raw?.balance ?? balanceResult.raw?.hbarBalance
+      const balanceHbar = typeof rawBalance === 'number' ? rawBalance : parseFloat(String(rawBalance ?? '0'))
+
+      if (balanceHbar > 0.1) {
+        // Keep 0.01 HBAR for the transfer fee, refund the rest
+        const refundAmount = Math.floor((balanceHbar - 0.01) * 100) / 100
+        // Refund to the user's wallet (deployment.userId is their account ID)
+        // If the agent was created by the platform, refund to operator instead
+        const recipientId = SHARED_USER_IDS.has(deployment.userId)
+          ? config.operatorAccountId
+          : deployment.userId
+        if (recipientId && refundAmount > 0) {
+          const tx = await new TransferTransaction()
+            .addHbarTransfer(deployment.agentAccountId, new Hbar(-refundAmount))
+            .addHbarTransfer(recipientId, new Hbar(refundAmount))
+            .setTransactionMemo(`Aivy destroy: refund from ${deployment.name}`)
+            .execute(agentClient)
+          await tx.getReceipt(agentClient)
+          refundedHbar = refundAmount
+          refundTxId = tx.transactionId?.toString() ?? null
+          console.log(`[Aivy] Refunded ${refundAmount} HBAR from ${deployment.name} (${deployment.agentAccountId}) to ${recipientId}`)
+        }
+      }
+    } catch (err) {
+      console.error(`[Aivy] Failed to refund HBAR from ${deployment.name}:`, err instanceof Error ? err.message : err)
+      // Continue with deletion even if refund fails
+    }
+  }
+
+  // Stop any active schedules/pollers
+  stopSchedule(deployment.id)
+  stopPoller(deployment.id)
+
   db.runInTransaction(() => {
     db.deleteDeployment(request.params.agentId)
-    pushActivity(`${deployment.name} removed from the Aivy floor.`, 'system')
+    const refundMsg = refundedHbar > 0 ? ` (${refundedHbar} HBAR refunded)` : ''
+    pushActivity(`${deployment.name} destroyed and removed from the Aivy floor.${refundMsg}`, 'system')
   })
-  response.status(204).end()
+  response.json({ ok: true, refundedHbar, refundTxId })
+})
+
+app.delete('/api/agents/:agentId/chat', requireAuth, (request, response) => {
+  const deployment = db.getDeployment(request.params.agentId)
+  if (!deployment) { response.status(404).json({ error: 'Deployment not found.' }); return }
+  if (!assertAgentOwnership(deployment, request)) { response.status(403).json({ error: 'You do not own this agent.' }); return }
+  db.clearChatHistory(request.params.agentId)
+  response.json({ ok: true })
 })
 
 // ─── Export Audit Report ──────────────────────────────
@@ -2798,7 +3207,9 @@ async function runChatLoop(
   const enabledGroups = new Set(deployment.capabilityGroups)
   const agentTools = catalog.tools.filter((t) => enabledGroups.has(t.groupId))
   const openaiTools = buildOpenAITools(agentTools)
-  const agentToolNames = new Set(agentTools.map((t) => t.name))
+  // Map sanitised OpenAI names back to original plugin names for executeTool
+  const sanitizedToOriginal = new Map(agentTools.map((t) => [sanitizeToolName(t.name), t.name]))
+  const agentToolNames = new Set(sanitizedToOriginal.keys())
 
   const collectedToolCalls: ChatLoopResult['toolCalls'] = []
   const collectedReferences: ResultReference[] = []
@@ -2809,13 +3220,13 @@ async function runChatLoop(
   while (iterations < maxIterations) {
     iterations++
 
-    const completion = await openai.chat.completions.create({
+    const completion = await withRetry(() => openai!.chat.completions.create({
       model: 'gpt-4o',
       messages: history as OpenAI.ChatCompletionMessageParam[],
       tools: openaiTools.length > 0 ? openaiTools : undefined,
       temperature: 0.3,
       max_tokens: 1024,
-    })
+    }))
 
     const choice = completion.choices[0]
     if (!choice) break
@@ -2841,6 +3252,7 @@ async function runChatLoop(
 
     for (const toolCall of fnToolCalls) {
       const fnName = toolCall.function.name
+      const originalFnName = sanitizedToOriginal.get(fnName) ?? fnName
       let fnArgs: Record<string, unknown> = {}
       try { fnArgs = JSON.parse(toolCall.function.arguments) as Record<string, unknown> } catch { /* empty */ }
 
@@ -2852,7 +3264,7 @@ async function runChatLoop(
       } else {
         // Programmatic spending cap check BEFORE executing the tool
         if (deployment.vaultProtected && deployment.vaultCapHbar > 0) {
-          const projectedSpend = detectSpendingAmount(fnName, fnArgs)
+          const projectedSpend = detectSpendingAmount(originalFnName, fnArgs)
           if (projectedSpend > 0) {
             const summary = db.getSpendingSummary(deployment.id)
             const totalAfter = summary.totalSpent + projectedSpend
@@ -2868,37 +3280,39 @@ async function runChatLoop(
         }
         try {
           const result = demoMode
-            ? getDemoToolResponse(fnName, fnArgs)
-            : await executeTool(fnName, fnArgs, agentClient)
+            ? getDemoToolResponse(originalFnName, fnArgs)
+            : await executeTool(originalFnName, fnArgs, agentClient)
           const references = extractResultReferences(result.raw)
-          collectedToolCalls.push({ toolName: fnName, params: fnArgs, result })
+          collectedToolCalls.push({ toolName: originalFnName, params: fnArgs, result })
           collectedReferences.push(...references)
 
-          const spendingAmount = detectSpendingAmount(fnName, fnArgs)
+          const spendingAmount = detectSpendingAmount(originalFnName, fnArgs)
           if (spendingAmount > 0) {
             const txId = typeof result.raw?.transactionId === 'string' ? result.raw.transactionId : null
-            db.recordSpending(deployment.id, spendingAmount, 'outflow', fnName, txId, source, result.humanMessage ?? null)
+            db.recordSpending(deployment.id, spendingAmount, 'outflow', originalFnName, txId, source, result.humanMessage ?? null)
           }
 
           if (result.raw) runCoordinationChecks(deployment, { ...result.raw, humanMessage: result.humanMessage })
 
-          const groupId = toolNameToGroup.get(fnName)
+          const groupId = toolNameToGroup.get(originalFnName)
           const isQuery = groupId ? queryGroupIds.has(groupId) : true
           if (!isQuery) {
             deployment.executions += 1
             deployment.status = deployment.vaultProtected ? 'guarded' : 'active'
-            deployment.lastAction = titleCase(fnName)
+            deployment.lastAction = titleCase(originalFnName)
             db.updateDeployment(deployment)
           }
 
           pushActivity(
-            `${deployment.name} (${source}): ${result.humanMessage ?? titleCase(fnName)}`,
+            `${deployment.name} (${source}): ${result.humanMessage ?? titleCase(originalFnName)}`,
             isQuery ? 'system' : deployment.vaultProtected ? 'vault' : 'success',
           )
 
           toolResultContent = JSON.stringify({ humanMessage: result.humanMessage, raw: result.raw })
+          console.log(`[chat] ${deployment.name} tool result for ${originalFnName}:`, toolResultContent.slice(0, 500))
         } catch (err) {
           toolResultContent = JSON.stringify({ error: err instanceof Error ? err.message : 'Tool execution failed.' })
+          console.error(`[chat] ${deployment.name} tool error for ${originalFnName}:`, err instanceof Error ? err.message : err)
         }
       }
 
@@ -3107,7 +3521,8 @@ app.post('/api/chat/route', requireAuth, chatLimiter, async (request, response) 
     const enabledGroups = new Set(deployment.capabilityGroups)
     const agentTools = catalog.tools.filter((t) => enabledGroups.has(t.groupId))
     const openaiTools = buildOpenAITools(agentTools, userAccountId)
-    const agentToolNames = new Set(agentTools.map((t) => t.name))
+    const sanitizedToOriginal2 = new Map(agentTools.map((t) => [sanitizeToolName(t.name), t.name]))
+    const agentToolNames = new Set(sanitizedToOriginal2.keys())
 
     history.push({ role: 'user', content: message })
 
@@ -3120,13 +3535,13 @@ app.post('/api/chat/route', requireAuth, chatLimiter, async (request, response) 
     let iterations = 0
     while (iterations < 5) {
       iterations++
-      const completion = await openai.chat.completions.create({
+      const completion = await withRetry(() => openai!.chat.completions.create({
         model: 'gpt-4o',
         messages: history as OpenAI.ChatCompletionMessageParam[],
         tools: openaiTools.length > 0 ? openaiTools : undefined,
         temperature: 0.3,
         max_tokens: 1024,
-      })
+      }))
 
       const choice = completion.choices[0]
       if (!choice) break
@@ -3149,6 +3564,7 @@ app.post('/api/chat/route', requireAuth, chatLimiter, async (request, response) 
 
       for (const toolCall of fnToolCalls2) {
         const fnName = toolCall.function.name
+        const originalFnName2 = sanitizedToOriginal2.get(fnName) ?? fnName
         let fnArgs: Record<string, unknown> = {}
         try { fnArgs = JSON.parse(toolCall.function.arguments) as Record<string, unknown> } catch { /* empty */ }
 
@@ -3159,8 +3575,8 @@ app.post('/api/chat/route', requireAuth, chatLimiter, async (request, response) 
         } else {
           try {
             const result = demoMode
-              ? getDemoToolResponse(fnName, fnArgs)
-              : await executeTool(fnName, fnArgs, routeAgentClient)
+              ? getDemoToolResponse(originalFnName2, fnArgs)
+              : await executeTool(originalFnName2, fnArgs, routeAgentClient)
             collectedToolCalls.push({ toolName: fnName, params: fnArgs, result })
 
             // Feature 4: Agent-to-agent coordination checks
@@ -3168,23 +3584,25 @@ app.post('/api/chat/route', requireAuth, chatLimiter, async (request, response) 
               runCoordinationChecks(deployment, { ...result.raw, humanMessage: result.humanMessage })
             }
 
-            const groupId = toolNameToGroup.get(fnName)
+            const groupId = toolNameToGroup.get(originalFnName2)
             const isQuery = groupId ? queryGroupIds.has(groupId) : true
             if (!isQuery) {
               deployment.executions += 1
               deployment.status = deployment.vaultProtected ? 'guarded' : 'active'
-              deployment.lastAction = titleCase(fnName)
+              deployment.lastAction = titleCase(originalFnName2)
               db.updateDeployment(deployment)
             }
 
             pushActivity(
-              `${deployment.name} (routed): ${result.humanMessage ?? titleCase(fnName)}`,
+              `${deployment.name} (routed): ${result.humanMessage ?? titleCase(originalFnName2)}`,
               isQuery ? 'system' : deployment.vaultProtected ? 'vault' : 'success',
             )
 
             toolResultContent = JSON.stringify({ humanMessage: result.humanMessage, raw: result.raw })
+            console.log(`[chat] ${deployment.name} tool result for ${originalFnName2}:`, toolResultContent.slice(0, 500))
           } catch (err) {
             toolResultContent = JSON.stringify({ error: err instanceof Error ? err.message : 'Tool failed.' })
+            console.error(`[chat] ${deployment.name} tool error for ${originalFnName2}:`, err instanceof Error ? err.message : err)
           }
         }
 
@@ -3644,7 +4062,7 @@ const demoSeedAgents = [
     guardrail: 'Max 250 HBAR per transaction',
     vaultProtected: true,
     vaultCapHbar: 250,
-    capabilityGroups: ['accounts', 'accountQueries', 'consensus', 'consensusQueries', 'transactionQueries', 'networkQueries'] as CapabilityGroupId[],
+    capabilityGroups: ['accounts', 'accountQueries', 'consensus', 'consensusQueries', 'transactionQueries', 'networkQueries', 'coincap', 'chainlink'] as CapabilityGroupId[],
   },
   {
     templateId: 'yield-router',
@@ -3653,7 +4071,7 @@ const demoSeedAgents = [
     guardrail: 'Only approved token operations',
     vaultProtected: true,
     vaultCapHbar: 500,
-    capabilityGroups: ['accounts', 'accountQueries', 'tokens', 'tokenQueries', 'contracts', 'contractQueries', 'transactionQueries', 'networkQueries'] as CapabilityGroupId[],
+    capabilityGroups: ['accounts', 'accountQueries', 'tokens', 'tokenQueries', 'contracts', 'contractQueries', 'transactionQueries', 'networkQueries', 'saucerswap', 'pyth', 'bonzo', 'memejob'] as CapabilityGroupId[],
   },
   {
     templateId: 'compliance-clerk',
@@ -3662,7 +4080,7 @@ const demoSeedAgents = [
     guardrail: 'Read-only access, no mutations',
     vaultProtected: false,
     vaultCapHbar: 0,
-    capabilityGroups: ['accountQueries', 'consensusQueries', 'tokenQueries', 'contractQueries', 'transactionQueries', 'networkQueries'] as CapabilityGroupId[],
+    capabilityGroups: ['accountQueries', 'consensusQueries', 'tokenQueries', 'contractQueries', 'transactionQueries', 'networkQueries', 'coincap', 'chainlink'] as CapabilityGroupId[],
   },
   {
     templateId: 'governance-relay',
@@ -3688,6 +4106,7 @@ app.post('/api/demo/seed', async (_request, response) => {
 
   // Clear existing deployments for THIS user only (not all users)
   const userId = authReq.userId!
+  db.clearJobsByUser(userId)
   db.clearChatHistoryByUser(userId)
   db.clearDeploymentsByUser(userId)
   db.clearActivityByUser(userId)
@@ -3780,10 +4199,9 @@ app.post('/api/demo/seed', async (_request, response) => {
     )
   }
 
-  // Add coordination events for flavor
-  const items = db.getAllDeployments()
-  const treasury = items.find(d => d.templateId === 'treasury-sentinel')
-  const yieldAgent = items.find(d => d.templateId === 'yield-router')
+  // Add coordination events for flavor — use only THIS user's just-created agents
+  const treasury = created.find(d => d.templateId === 'treasury-sentinel')
+  const yieldAgent = created.find(d => d.templateId === 'yield-router')
   if (treasury && yieldAgent) {
     coordinationLog.unshift({
       id: `coord-demo-${Date.now()}`,
@@ -3798,7 +4216,7 @@ app.post('/api/demo/seed', async (_request, response) => {
     })
   }
 
-  const govAgent = items.find(d => d.templateId === 'governance-relay')
+  const govAgent = created.find(d => d.templateId === 'governance-relay')
   if (treasury && govAgent) {
     coordinationLog.unshift({
       id: `coord-demo2-${Date.now()}`,
@@ -3811,6 +4229,73 @@ app.post('/api/demo/seed', async (_request, response) => {
       timestamp: new Date().toISOString(),
       status: 'completed',
     })
+  }
+
+  // ─── Demo ERC-8183 Jobs ──────────────────────────
+  const auditAgent = created.find(d => d.templateId === 'compliance-clerk')
+  const demoJobSpecs: Array<{
+    client: DeploymentRecord | undefined
+    provider: DeploymentRecord | undefined
+    budgetHbar: number
+    description: string
+    status: db.JobRecord['status']
+    deliverable: string | null
+  }> = [
+    {
+      client: treasury,
+      provider: yieldAgent,
+      budgetHbar: 10,
+      description: 'Optimize yield strategy for Q1 treasury reserves',
+      status: 'Completed',
+      deliverable: 'Routed 500 HBAR to SaucerSwap HBAR-USDC pool at 4.2% APY. Net gain: 5.25 HBAR.',
+    },
+    {
+      client: yieldAgent,
+      provider: auditAgent,
+      budgetHbar: 3,
+      description: 'Audit token swap transactions from last 24h',
+      status: 'Submitted',
+      deliverable: 'Reviewed 12 swap transactions. All within slippage limits. No anomalies detected.',
+    },
+    {
+      client: govAgent,
+      provider: treasury,
+      budgetHbar: 25,
+      description: 'Execute approved governance proposal #7: fund community grants',
+      status: 'Funded',
+      deliverable: null,
+    },
+    {
+      client: treasury,
+      provider: auditAgent,
+      budgetHbar: 5,
+      description: 'Verify vault spending cap compliance across all agents',
+      status: 'Open',
+      deliverable: null,
+    },
+  ]
+
+  for (const spec of demoJobSpecs) {
+    if (!spec.client || !spec.provider) continue
+    const jobId = `job-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
+    const job: db.JobRecord = {
+      id: jobId,
+      jobChainId: 1,
+      clientAgentId: spec.client.id,
+      providerAgentId: spec.provider.id,
+      evaluatorAddress: config.operatorAccountId || null,
+      description: spec.description,
+      budgetHbar: spec.budgetHbar,
+      expiredAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+      status: spec.status,
+      deliverable: spec.deliverable,
+      contractId: nextDemoContractId(),
+      txId: nextDemoTxId(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    db.insertJob(job)
+    pushActivity(`ERC-8183 job: ${spec.client.name} → ${spec.provider.name} (${spec.budgetHbar} ℏ) [${spec.status}]`, 'vault')
   }
 
   response.status(201).json({
@@ -4143,6 +4628,17 @@ app.get('/api/jobs', requireAuth, readLimiter, (request, response) => {
 app.get('/api/jobs/:jobId', requireAuth, readLimiter, (request, response) => {
   const job = db.getJob(request.params.jobId)
   if (!job) { response.status(404).json({ error: 'Job not found.' }); return }
+
+  // Verify user owns either the client or provider agent
+  const clientAgent = db.getDeployment(job.clientAgentId)
+  const providerAgent = db.getDeployment(job.providerAgentId)
+  const ownsClient = clientAgent && assertAgentOwnership(clientAgent, request)
+  const ownsProvider = providerAgent && assertAgentOwnership(providerAgent, request)
+  if (!ownsClient && !ownsProvider) {
+    response.status(403).json({ error: 'You do not own either agent in this job.' })
+    return
+  }
+
   response.json({ job })
 })
 
@@ -4214,6 +4710,13 @@ app.post('/api/jobs/:jobId/complete', requireAuth, toolLimiter, (request, respon
   if (!job) { response.status(404).json({ error: 'Job not found.' }); return }
   if (job.status !== 'Submitted') { response.status(400).json({ error: `Job is ${job.status}, expected Submitted.` }); return }
 
+  // Only the client agent's owner (evaluator) can approve
+  const clientAgent = db.getDeployment(job.clientAgentId)
+  if (!clientAgent || !assertAgentOwnership(clientAgent, request)) {
+    response.status(403).json({ error: 'Only the client agent owner can approve jobs.' })
+    return
+  }
+
   const providerAgent = db.getDeployment(job.providerAgentId)
   if (!providerAgent) { response.status(404).json({ error: 'Provider agent not found.' }); return }
 
@@ -4231,9 +4734,8 @@ app.post('/api/jobs/:jobId/complete', requireAuth, toolLimiter, (request, respon
 
   db.updateJobStatus(job.id, 'Completed', null, payTxId)
 
-  const clientAgent = db.getDeployment(job.clientAgentId)
   pushActivity(
-    `Job completed: ${clientAgent?.name ?? 'agent'} paid ${providerAgent.name} ${job.budgetHbar} HBAR`,
+    `Job completed: ${clientAgent.name} paid ${providerAgent.name} ${job.budgetHbar} HBAR`,
     'success',
   )
 
@@ -4249,6 +4751,13 @@ app.post('/api/jobs/:jobId/reject', requireAuth, toolLimiter, (request, response
   if (!job) { response.status(404).json({ error: 'Job not found.' }); return }
   if (job.status !== 'Submitted' && job.status !== 'Funded') {
     response.status(400).json({ error: `Job is ${job.status}, expected Submitted or Funded.` })
+    return
+  }
+
+  // Only the client agent's owner (evaluator) can reject
+  const clientAgentCheck = db.getDeployment(job.clientAgentId)
+  if (!clientAgentCheck || !assertAgentOwnership(clientAgentCheck, request)) {
+    response.status(403).json({ error: 'Only the client agent owner can reject jobs.' })
     return
   }
 

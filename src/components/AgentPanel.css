@@ -167,17 +167,19 @@
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.04);
   flex-shrink: 0;
+  overflow-x: auto;
 }
 
 .ap-tabs::-webkit-scrollbar { display: none; }
 
 .ap-tab {
-  flex: 1 0 auto;
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 7px 10px;
+  padding: 7px 8px;
   border-radius: 8px;
   border: none;
   background: transparent;
@@ -261,6 +263,24 @@
   font-size: 14px;
   color: var(--color-text-soft);
   word-break: break-all;
+}
+
+.ap-stat-link {
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  color: #5ad6b5;
+  word-break: break-all;
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+
+.ap-stat-link:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+}
+
+.ap-stat--wide {
+  grid-column: 1 / -1;
 }
 
 /* ─── Wallet Section ──────────────────────────── */
@@ -577,6 +597,21 @@
 .ap-chip.is-blue { border-color: rgba(127, 149, 209, 0.3); color: #7f95d1; }
 .ap-chip.is-rose { border-color: rgba(242, 95, 92, 0.3); color: #f25f5c; }
 
+.ap-chip.is-coming-soon {
+  opacity: 0.35;
+  filter: grayscale(0.6) blur(0.3px);
+  position: relative;
+}
+
+.ap-chip-soon {
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #f5a623;
+  margin-left: 4px;
+  font-weight: 700;
+}
+
 /* ─── Workflows ────────────────────────────────── */
 .ap-workflows {
   display: flex;
@@ -709,6 +744,65 @@
 }
 
 .ap-btn-ghost:hover { color: #f25f5c; }
+
+.ap-btn-destroy {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(242, 95, 92, 0.2);
+  background: rgba(242, 95, 92, 0.06);
+  color: #f25f5c;
+  font-size: 13px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ap-btn-destroy:hover {
+  background: rgba(242, 95, 92, 0.12);
+  border-color: rgba(242, 95, 92, 0.35);
+}
+
+.ap-destroy-confirm {
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(242, 95, 92, 0.25);
+  background: rgba(242, 95, 92, 0.04);
+}
+
+.ap-destroy-warn {
+  font-size: 12px;
+  color: #c0cce0;
+  margin: 0 0 10px;
+  line-height: 1.5;
+}
+
+.ap-destroy-warn strong {
+  color: #eef5ff;
+}
+
+.ap-destroy-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.ap-btn-destroy-confirm {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(242, 95, 92, 0.4);
+  background: rgba(242, 95, 92, 0.15);
+  color: #f25f5c;
+  font-size: 12px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ap-btn-destroy-confirm:hover {
+  background: rgba(242, 95, 92, 0.25);
+}
 
 /* ─── Tab Badge ───────────────────────────────── */
 .ap-tab-badge {
@@ -1048,6 +1142,152 @@
   font-size: 0.7rem;
   opacity: 0.45;
   white-space: nowrap;
+}
+
+/* ─── Jobs Tab (ERC-8183) ──────────────────────── */
+.ap-jobs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.ap-jobs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ap-job-create {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(90, 214, 181, 0.15);
+  background: rgba(90, 214, 181, 0.04);
+}
+
+.ap-job-create-row {
+  display: flex;
+  gap: 8px;
+}
+
+.ap-job-create-row .ap-fund-input {
+  width: 90px;
+}
+
+.ap-job-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ap-job-card {
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ap-job-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ap-job-role {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-muted);
+  font-weight: 600;
+}
+
+.ap-job-status {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.ap-job-desc {
+  font-size: 13px;
+  color: var(--color-text-soft, #c4d0e4);
+  line-height: 1.4;
+}
+
+.ap-job-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+.ap-job-budget {
+  font-weight: 700;
+  color: #f3c35f;
+}
+
+.ap-job-deliverable {
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(90, 214, 181, 0.06);
+  border: 1px solid rgba(90, 214, 181, 0.1);
+}
+
+.ap-job-deliverable-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #5ad6b5;
+  font-weight: 600;
+}
+
+.ap-job-deliverable p {
+  font-size: 12px;
+  color: var(--color-text-soft);
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.ap-job-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.ap-btn-small {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-text-soft);
+  font-size: 11px;
+  font-family: 'Space Grotesk', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.ap-btn-small:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ap-btn-small.primary {
+  background: rgba(90, 214, 181, 0.12);
+  border-color: rgba(90, 214, 181, 0.3);
+  color: #5ad6b5;
+}
+
+.ap-btn-small.primary:hover:not(:disabled) {
+  background: rgba(90, 214, 181, 0.2);
+}
+
+.ap-btn-small:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ─── Automation Tab ──────────────────────────── */

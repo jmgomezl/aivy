@@ -58,7 +58,8 @@ export default function PhaserOffice({
   const containerRef = useRef<HTMLDivElement>(null)
   const gameRef = useRef<Phaser.Game | null>(null)
   const [soundOn, setSoundOn] = useState(false)
-  const { fetchAgentBalances, balanceVersion } = useWalletContext()
+  const { fetchAgentBalances, balanceVersion, wallet, sessionAccountId } = useWalletContext()
+  const [walletBalance, setWalletBalance] = useState<number | null>(null)
 
   // Pre-fetch all agent balances on mount + poll every 30s
   useEffect(() => {
@@ -71,6 +72,27 @@ export default function PhaserOffice({
     const interval = setInterval(() => fetchAgentBalances(accountIds, mirrorNodeUrl), 30_000)
     return () => clearInterval(interval)
   }, [agents.length, mirrorNodeUrl, fetchAgentBalances, balanceVersion])
+
+  // Fetch connected wallet HBAR balance
+  const walletAccountId = wallet.status === 'connected' ? wallet.accountId : sessionAccountId
+  useEffect(() => {
+    if (!mirrorNodeUrl || !walletAccountId) { setWalletBalance(null); return }
+    const base = mirrorNodeUrl.replace(/\/api\/v1\/?$/, '')
+    let cancelled = false
+    const fetchBal = () =>
+      fetch(`${base}/api/v1/balances?account.id=${walletAccountId}&limit=1`, { signal: AbortSignal.timeout(8_000) })
+        .then(r => r.json())
+        .then((data: { balances?: Array<{ balance: number }> }) => {
+          if (!cancelled) {
+            const bal = data.balances?.[0]?.balance
+            setWalletBalance(typeof bal === 'number' ? Math.round((bal / 1e8) * 100) / 100 : null)
+          }
+        })
+        .catch(() => {})
+    void fetchBal()
+    const interval = setInterval(fetchBal, 30_000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [walletAccountId, mirrorNodeUrl, balanceVersion])
 
   // Activity animations — only fires on real user actions (chat, tool runs)
   const { simCoordinations, simActiveIds, fadingCoordIds, simEvents, triggerCoordination } = useSimulatedActivity(agents, soundOn)
@@ -197,8 +219,17 @@ export default function PhaserOffice({
         <div className="fstat-divider" />
         <div className="fstat">
           <span>{stats.totalBalance.toFixed(1)}</span>
-          <label>Balance</label>
+          <label>Agents Balance</label>
         </div>
+        {walletBalance !== null && (
+          <>
+            <div className="fstat-divider" />
+            <div className="fstat">
+              <span>{walletBalance.toFixed(1)}</span>
+              <label>Wallet</label>
+            </div>
+          </>
+        )}
         <div className="fstat-divider" />
         <div className="fstat">
           <span>{stats.hbarSecured.toFixed(0)}</span>

@@ -9,34 +9,43 @@ import { setToken, clearToken, getSessionAccountId } from '../lib/auth'
 
 export { isWalletConnectConfigured }
 
-async function authenticateWithServer(accountId: string): Promise<void> {
+async function authenticateWithServer(
+  accountId: string,
+  onAuthError?: (msg: string) => void,
+): Promise<boolean> {
   try {
-    // Step 1: Request challenge
     const challengeResp = await fetch('/api/auth/challenge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ accountId }),
     })
-    if (!challengeResp.ok) return
+    if (!challengeResp.ok) {
+      onAuthError?.('Server authentication failed (challenge step)')
+      return false
+    }
 
-    // Step 2: Verify with server (simplified - server verifies account exists on Hedera)
     const verifyResp = await fetch('/api/auth/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ accountId }),
     })
-    if (!verifyResp.ok) return
+    if (!verifyResp.ok) {
+      onAuthError?.('Server authentication failed (verify step)')
+      return false
+    }
 
     const { token } = (await verifyResp.json()) as { token: string }
     setToken(token)
+    return true
   } catch {
-    // Auth failure is non-critical - app still works without it
-    console.warn('[Aivy] Server authentication failed, continuing without auth.')
+    onAuthError?.('Server authentication failed — check connection')
+    return false
   }
 }
 
 export function useWallet() {
   const [wallet, setWallet] = useState<WalletState>({ status: 'idle' })
+  const [authError, setAuthError] = useState<string | null>(null)
 
   const connectWallet = async () => {
     if (!isWalletConnectConfigured) {
@@ -48,12 +57,18 @@ export function useWallet() {
     }
 
     setWallet({ status: 'connecting' })
+    setAuthError(null)
     try {
       const session = await connectHederaWallet()
       setWallet({ status: 'connected', ...session })
 
-      // Authenticate with backend after wallet connects
-      void authenticateWithServer(session.accountId)
+      // Authenticate with backend after wallet connects (with retry)
+      const ok = await authenticateWithServer(session.accountId, setAuthError)
+      if (!ok) {
+        // Retry once after a short delay
+        await new Promise((r) => setTimeout(r, 1500))
+        await authenticateWithServer(session.accountId, setAuthError)
+      }
     } catch (error) {
       setWallet({
         status: 'error',
@@ -92,5 +107,5 @@ export function useWallet() {
     window.location.reload()
   }
 
-  return { wallet, connectWallet, disconnectWallet, sessionAccountId, logout }
+  return { wallet, connectWallet, disconnectWallet, sessionAccountId, logout, authError }
 }
