@@ -2239,8 +2239,8 @@ const safeDeployment = (d: DeploymentRecord) => {
 
 const buildLivePayload = async (userId?: string | null) => {
   const allItems = db.getAllDeployments()
-  // Authenticated users see only their own agents; unauthenticated see empty office
-  const deploymentItems = userId && userId !== 'demo' && userId !== 'anonymous'
+  // Authenticated users see their own agents; demo users see shared demo agents
+  const deploymentItems = userId
     ? allItems.filter((d) => d.userId === userId)
     : []
   const topicMessages = await Promise.all(
@@ -4094,18 +4094,15 @@ const demoSeedAgents = [
 ]
 
 app.post('/api/demo/seed', async (_request, response) => {
-  // Auto-create a guest session if user is not authenticated
+  // Always create a fresh demo identity — never touch the caller's real agents
+  const demoId = `demo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  const guestToken = issueToken(demoId, 'guest')
   const authReq = _request as AuthenticatedRequest
-  let guestToken: string | null = null
-  if (!authReq.userId) {
-    const guestId = `demo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-    authReq.userId = guestId
-    authReq.accountId = null
-    guestToken = issueToken(guestId, 'guest')
-  }
+  authReq.userId = demoId
+  authReq.accountId = null
 
-  // Clear existing deployments for THIS user only (not all users)
-  const userId = authReq.userId!
+  // Clear only previous demo data for the shared 'demo' user
+  const userId = demoId
   db.clearJobsByUser(userId)
   db.clearChatHistoryByUser(userId)
   db.clearDeploymentsByUser(userId)
