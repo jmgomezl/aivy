@@ -64,12 +64,13 @@ export default function FundModal({
       ? fundableAgents
       : agent.agentAccountId ? [agent] : []
     if (agents.length === 0) return
+    const ctrl = new AbortController()
     setBalanceLoading(true)
     const base = mirrorNodeUrl.replace(/\/api\/v1\/?$/, '')
     Promise.all(
       agents.map((a) => {
         const url = `${base}/api/v1/balances?account.id=${a.agentAccountId}&limit=1`
-        return fetch(url, { signal: AbortSignal.timeout(8_000) })
+        return fetch(url, { signal: ctrl.signal })
           .then((r) => r.json())
           .then((data: { balances?: Array<{ balance: number }> }) => {
             const bal = data.balances?.[0]?.balance
@@ -78,11 +79,13 @@ export default function FundModal({
           .catch(() => [a.id, null] as const)
       }),
     ).then((results) => {
+      if (ctrl.signal.aborted) return
       const map: Record<string, number | null> = {}
       for (const [id, bal] of results) map[id] = bal
       setBalances(map)
       setBalanceLoading(false)
     })
+    return () => ctrl.abort()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fundableIds, mirrorNodeUrl, balanceVersion])
 
@@ -123,7 +126,7 @@ export default function FundModal({
   }
 
   return (
-    <div className="fund-overlay" onClick={onClose}>
+    <div className="fund-overlay" role="dialog" aria-modal="true" aria-label="Fund Agent" onClick={onClose}>
       <div className="fund-modal" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="fm-header">

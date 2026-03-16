@@ -8,6 +8,7 @@ type WalletContextValue = {
   disconnectWallet: () => Promise<void>
   sessionAccountId: string | null
   logout: () => void
+  authError: string | null
   balanceVersion: number
   invalidateBalances: () => void
   /** Pre-fetched agent balances (agentAccountId → HBAR amount) */
@@ -19,7 +20,7 @@ type WalletContextValue = {
 const WalletContext = createContext<WalletContextValue | null>(null)
 
 export function WalletProvider({ children }: { children: ReactNode }) {
-  const { wallet, connectWallet, disconnectWallet, sessionAccountId, logout } = useWallet()
+  const { wallet, connectWallet, disconnectWallet, sessionAccountId, logout, authError } = useWallet()
   const [balanceVersion, setBalanceVersion] = useState(0)
   const [agentBalances, setAgentBalances] = useState<Map<string, number>>(() => new Map())
   const fetchingRef = useRef(false)
@@ -67,6 +68,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         disconnectWallet,
         sessionAccountId,
         logout,
+        authError,
         balanceVersion,
         invalidateBalances,
         agentBalances,

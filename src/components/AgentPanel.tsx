@@ -2,12 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { LiveAgent, ToolCatalogResponse, ToolCatalogEntry, ToolWorkflow, ToolCatalogGroup, ActivityEvent, AgentSpendingResponse, JobRecord } from '../types'
 import { statusMeta, toneClass, templates } from '../data'
 import { requestJson } from '../utils'
+import { getAuthHeaders } from '../lib/auth'
 import { useToast } from '../hooks/useToast'
 import { useWalletContext } from '../contexts/WalletContext'
 import ChatPanel from './ChatPanel'
 import ScheduleManager from './ScheduleManager'
 import TriggerManager from './TriggerManager'
+import type { CapabilityGroupId } from '../types'
 import './AgentPanel.css'
+
+const comingSoonGroups = new Set<CapabilityGroupId>(['saucerswap', 'bonzo', 'memejob', 'coincap'])
 
 type AgentPanelProps = {
   agent: LiveAgent
@@ -51,6 +55,7 @@ export default function AgentPanel({
   const { wallet, connectWallet, agentBalances } = useWalletContext()
   const [activeTab, setActiveTab] = useState<'info' | 'chat' | 'history' | 'spending' | 'automation' | 'jobs'>(chatEnabled ? 'chat' : 'info')
   const [isExporting, setIsExporting] = useState(false)
+  const [showDestroyConfirm, setShowDestroyConfirm] = useState(false)
   const [coordTarget, setCoordTarget] = useState('')
   const [coordMsg, setCoordMsg] = useState('')
   const [coordSending, setCoordSending] = useState(false)
@@ -95,7 +100,7 @@ export default function AgentPanel({
       setSpendingLoading(true)
       requestJson<AgentSpendingResponse>(`/api/agents/${agent.id}/spending`)
         .then(setSpendingData)
-        .catch((err) => { console.warn('[AgentPanel] Spending fetch failed:', err); setSpendingData(null) })
+        .catch(() => { setSpendingData(null) })
         .finally(() => setSpendingLoading(false))
     }
   }, [agent.id, activeTab])
@@ -161,7 +166,9 @@ export default function AgentPanel({
   const handleExportAudit = async () => {
     setIsExporting(true)
     try {
-      const resp = await fetch(`/api/agents/${agent.id}/export-audit`)
+      const resp = await fetch(`/api/agents/${agent.id}/export-audit`, {
+        headers: getAuthHeaders(),
+      })
       if (!resp.ok) throw new Error('Export failed')
       const blob = await resp.blob()
       const url = URL.createObjectURL(blob)
@@ -368,7 +375,7 @@ export default function AgentPanel({
               )}
             </div>
           </div>
-          <button className="ap-close" onClick={onClose} type="button">
+          <button className="ap-close" onClick={onClose} type="button" aria-label="Close agent panel">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
@@ -477,11 +484,23 @@ export default function AgentPanel({
             <div className="ap-stats">
               <div className="ap-stat">
                 <span>Topic</span>
-                <strong>{agent.topicId ?? 'Pending'}</strong>
+                {agent.topicId ? (
+                  <a href={`https://hashscan.io/testnet/topic/${agent.topicId}`} target="_blank" rel="noopener noreferrer" className="ap-stat-link">
+                    {agent.topicId}
+                  </a>
+                ) : (
+                  <strong>Pending</strong>
+                )}
               </div>
               <div className="ap-stat">
                 <span>Vault</span>
-                <strong>{agent.contractId ?? 'Pending'}</strong>
+                {agent.contractId ? (
+                  <a href={`https://hashscan.io/testnet/contract/${agent.contractId}`} target="_blank" rel="noopener noreferrer" className="ap-stat-link">
+                    {agent.contractId}
+                  </a>
+                ) : (
+                  <strong>Pending</strong>
+                )}
               </div>
               <div className="ap-stat">
                 <span>Runs</span>
@@ -491,6 +510,14 @@ export default function AgentPanel({
                 <span>Cap</span>
                 <strong>{agent.vaultCapHbar} HBAR</strong>
               </div>
+              {agent.deploymentTxId && (
+                <div className="ap-stat ap-stat--wide">
+                  <span>Deploy Tx</span>
+                  <a href={`https://hashscan.io/testnet/transaction/${agent.deploymentTxId}`} target="_blank" rel="noopener noreferrer" className="ap-stat-link">
+                    {agent.deploymentTxId}
+                  </a>
+                </div>
+              )}
             </div>
 
             {/* ─── Wallet ──────────────────────────── */}
@@ -711,9 +738,15 @@ export default function AgentPanel({
                 {agent.capabilityGroups.map((groupId) => {
                   const group: ToolCatalogGroup | undefined = toolGroups.find((g) => g.id === groupId)
                   if (!group) return null
+                  const isSoon = comingSoonGroups.has(groupId)
                   return (
-                    <span className={`ap-chip ${toneClass[group.tone]}`} key={group.id}>
+                    <span
+                      className={`ap-chip ${toneClass[group.tone]}${isSoon ? ' is-coming-soon' : ''}`}
+                      key={group.id}
+                      title={isSoon ? 'Coming soon — requires API key' : group.description}
+                    >
                       {group.label}
+                      {isSoon && <span className="ap-chip-soon">Soon</span>}
                     </span>
                   )
                 })}
@@ -780,9 +813,29 @@ export default function AgentPanel({
               <button className="ap-btn-secondary" onClick={onToggleAgent} type="button">
                 {agent.status === 'paused' ? 'Resume' : 'Pause'}
               </button>
-              <button className="ap-btn-ghost" onClick={onRemoveAgent} type="button">
-                Remove
-              </button>
+              {!showDestroyConfirm ? (
+                <button className="ap-btn-destroy" onClick={() => setShowDestroyConfirm(true)} type="button">
+                  Destroy Agent
+                </button>
+              ) : (
+                <div className="ap-destroy-confirm">
+                  <p className="ap-destroy-warn">
+                    This will permanently delete <strong>{agent.name}</strong>.
+                    {agent.walletType === 'dedicated' && walletBalance !== null && walletBalance > 0
+                      ? ` Remaining ${walletBalance} HBAR will be refunded to your wallet.`
+                      : ''
+                    }
+                  </p>
+                  <div className="ap-destroy-btns">
+                    <button className="ap-btn-destroy-confirm" onClick={onRemoveAgent} type="button">
+                      Confirm Destroy
+                    </button>
+                    <button className="ap-btn-secondary" onClick={() => setShowDestroyConfirm(false)} type="button">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}

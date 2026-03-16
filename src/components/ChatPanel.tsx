@@ -27,13 +27,15 @@ const suggestedPrompts: Record<string, string[]> = {
     'Check my HBAR balance',
     'Show account info',
     'Transfer 5 HBAR to 0.0.5678',
-    'Exchange rate?',
+    'Get the price of HBAR from Chainlink',
   ],
   'yield-router': [
     'Create token HackCoin',
     'Mint 500 tokens',
     'Deploy ERC20 contract',
     'Token balances',
+    'Get the price of HBAR from Pyth',
+    'Get the price of BTC from Chainlink',
   ],
   'compliance-clerk': [
     'Audit my account',

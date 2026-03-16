@@ -265,6 +265,24 @@
   word-break: break-all;
 }
 
+.ap-stat-link {
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  color: #5ad6b5;
+  word-break: break-all;
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+
+.ap-stat-link:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+}
+
+.ap-stat--wide {
+  grid-column: 1 / -1;
+}
+
 /* ─── Wallet Section ──────────────────────────── */
 .ap-wallet-section {
   display: flex;
@@ -579,6 +597,21 @@
 .ap-chip.is-blue { border-color: rgba(127, 149, 209, 0.3); color: #7f95d1; }
 .ap-chip.is-rose { border-color: rgba(242, 95, 92, 0.3); color: #f25f5c; }
 
+.ap-chip.is-coming-soon {
+  opacity: 0.35;
+  filter: grayscale(0.6) blur(0.3px);
+  position: relative;
+}
+
+.ap-chip-soon {
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #f5a623;
+  margin-left: 4px;
+  font-weight: 700;
+}
+
 /* ─── Workflows ────────────────────────────────── */
 .ap-workflows {
   display: flex;
@@ -711,6 +744,65 @@
 }
 
 .ap-btn-ghost:hover { color: #f25f5c; }
+
+.ap-btn-destroy {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(242, 95, 92, 0.2);
+  background: rgba(242, 95, 92, 0.06);
+  color: #f25f5c;
+  font-size: 13px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ap-btn-destroy:hover {
+  background: rgba(242, 95, 92, 0.12);
+  border-color: rgba(242, 95, 92, 0.35);
+}
+
+.ap-destroy-confirm {
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(242, 95, 92, 0.25);
+  background: rgba(242, 95, 92, 0.04);
+}
+
+.ap-destroy-warn {
+  font-size: 12px;
+  color: #c0cce0;
+  margin: 0 0 10px;
+  line-height: 1.5;
+}
+
+.ap-destroy-warn strong {
+  color: #eef5ff;
+}
+
+.ap-destroy-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.ap-btn-destroy-confirm {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(242, 95, 92, 0.4);
+  background: rgba(242, 95, 92, 0.15);
+  color: #f25f5c;
+  font-size: 12px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ap-btn-destroy-confirm:hover {
+  background: rgba(242, 95, 92, 0.25);
+}
 
 /* ─── Tab Badge ───────────────────────────────── */
 .ap-tab-badge {

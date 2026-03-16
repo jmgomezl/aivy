@@ -5,6 +5,9 @@ import { deepClone, buildLaunchPayload } from '../utils'
 import { useWalletContext } from '../contexts/WalletContext'
 import './DeployModal.css'
 
+// Plugin groups that require external API keys and are not yet functional
+const comingSoonGroups = new Set<CapabilityGroupId>(['saucerswap', 'bonzo', 'memejob', 'coincap'])
+
 type DeployModalProps = {
   templateId: string
   catalog: ToolCatalogResponse | null
@@ -77,7 +80,9 @@ export default function DeployModal({
   })
   const [fundingSource, setFundingSource] = useState<'wallet' | 'platform'>('wallet')
   const [operatorBalance, setOperatorBalance] = useState<number | null>(null)
+  const [operatorBalFailed, setOperatorBalFailed] = useState(false)
   const [userWalletBalance, setUserWalletBalance] = useState<number | null>(null)
+  const [userBalFailed, setUserBalFailed] = useState(false)
 
   const isWalletConnected = wallet.status === 'connected'
   const userAccountId = isWalletConnected ? wallet.accountId : null
@@ -85,29 +90,37 @@ export default function DeployModal({
   // Fetch operator balance from Mirror Node
   useEffect(() => {
     if (!operatorAccountId || !mirrorNodeUrl) return
+    const ctrl = new AbortController()
     const base = mirrorNodeUrl.replace(/\/api\/v1\/?$/, '')
     const url = `${base}/api/v1/balances?account.id=${operatorAccountId}&limit=1`
-    fetch(url, { signal: AbortSignal.timeout(8_000) })
+    setOperatorBalFailed(false)
+    fetch(url, { signal: ctrl.signal })
       .then(r => r.json())
       .then((data: { balances?: Array<{ balance: number }> }) => {
         const bal = data.balances?.[0]?.balance
         if (typeof bal === 'number') setOperatorBalance(bal / 1e8)
+        else { setOperatorBalance(null); setOperatorBalFailed(true) }
       })
-      .catch((err) => { console.warn('[Deploy] Operator balance fetch failed:', err); setOperatorBalance(null) })
+      .catch(() => { setOperatorBalance(null); setOperatorBalFailed(true) })
+    return () => ctrl.abort()
   }, [operatorAccountId, mirrorNodeUrl])
 
   // Fetch user wallet balance from Mirror Node
   useEffect(() => {
     if (!userAccountId || !mirrorNodeUrl) return
+    const ctrl = new AbortController()
     const base = mirrorNodeUrl.replace(/\/api\/v1\/?$/, '')
     const url = `${base}/api/v1/balances?account.id=${userAccountId}&limit=1`
-    fetch(url, { signal: AbortSignal.timeout(8_000) })
+    setUserBalFailed(false)
+    fetch(url, { signal: ctrl.signal })
       .then(r => r.json())
       .then((data: { balances?: Array<{ balance: number }> }) => {
         const bal = data.balances?.[0]?.balance
         if (typeof bal === 'number') setUserWalletBalance(bal / 1e8)
+        else { setUserWalletBalance(null); setUserBalFailed(true) }
       })
-      .catch((err) => { console.warn('[Deploy] Wallet balance fetch failed:', err); setUserWalletBalance(null) })
+      .catch(() => { setUserWalletBalance(null); setUserBalFailed(true) })
+    return () => ctrl.abort()
   }, [userAccountId, mirrorNodeUrl])
 
   const isDuplicateName = existingNames.some(
@@ -151,7 +164,7 @@ export default function DeployModal({
   }
 
   return (
-    <div className="deploy-overlay">
+    <div className="deploy-overlay" role="dialog" aria-modal="true" aria-label="Deploy Agent">
       <div className="deploy-modal">
         {/* ─── Header ──────────────────────────── */}
         <div className="dm-header">
@@ -164,7 +177,7 @@ export default function DeployModal({
               <p>{template.mission}</p>
             </div>
           </div>
-          <button className="dm-close" onClick={onClose} type="button">
+          <button className="dm-close" onClick={onClose} type="button" aria-label="Close">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
@@ -268,8 +281,12 @@ export default function DeployModal({
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
                   <span className="dm-wallet-id">{wallet.accountId}</span>
-                  {userWalletBalance !== null && (
+                  {userWalletBalance !== null ? (
                     <span className="dm-wallet-bal">{userWalletBalance.toFixed(2)} ℏ</span>
+                  ) : userBalFailed ? (
+                    <span className="dm-wallet-bal" style={{ color: '#f87171' }}>Balance unavailable</span>
+                  ) : (
+                    <span className="dm-wallet-bal" style={{ opacity: 0.5 }}>Loading...</span>
                   )}
                 </div>
               )}
@@ -317,10 +334,14 @@ export default function DeployModal({
                     <span className="dm-tooltip-wrap" role="img" aria-label="Help">?<span className="dm-tooltip-body">The platform provides {PLATFORM_FUNDING_CAP} ℏ for testing. For larger amounts, use your own wallet.</span></span>
                   </span>
                   <div className="dm-platform-amount">{PLATFORM_FUNDING_CAP} ℏ <small>provided by platform</small></div>
-                  {operatorBalance !== null && (
+                  {operatorBalance !== null ? (
                     <span className={`dm-operator-bal ${PLATFORM_FUNDING_CAP > operatorBalance ? 'low' : ''}`}>
                       Operator balance: <strong>{operatorBalance.toFixed(2)} ℏ</strong>
                     </span>
+                  ) : operatorBalFailed ? (
+                    <span className="dm-operator-bal" style={{ color: '#f87171' }}>Operator balance unavailable</span>
+                  ) : (
+                    <span className="dm-operator-bal" style={{ opacity: 0.5 }}>Loading operator balance...</span>
                   )}
                 </div>
               )}
@@ -362,11 +383,10 @@ export default function DeployModal({
             </span>
             <div className="dm-coord-grid">
               {existingAgents.filter(a => a.status !== 'paused').map(a => {
-                const agentTemplate = templates.find(t => t.id === a.templateId)
                 const isSelected = coordinationPartners.includes(a.id)
                 return (
                   <button
-                    className={isSelected ? 'dm-coord-card is-active' : 'dm-coord-card'}
+                    className={isSelected ? 'dm-coord-chip is-active' : 'dm-coord-chip'}
                     key={a.id}
                     onClick={() => setCoordinationPartners(prev =>
                       prev.includes(a.id) ? prev.filter(id => id !== a.id) : [...prev, a.id]
@@ -377,14 +397,11 @@ export default function DeployModal({
                       alt=""
                       className="pixel-image"
                       src={a.sprite}
-                      style={{ width: 22, height: 22, imageRendering: 'pixelated' }}
+                      style={{ width: 16, height: 16, imageRendering: 'pixelated' }}
                     />
-                    <div className="dm-coord-info">
-                      <strong>{a.name}</strong>
-                      <span>{agentTemplate?.room ?? 'Office'}</span>
-                    </div>
+                    <span>{a.name}</span>
                     {isSelected && (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5ad6b5" strokeWidth="2.5">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#5ad6b5" strokeWidth="3">
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
                     )}
@@ -482,17 +499,22 @@ export default function DeployModal({
                 <div className="dm-cap-grid">
                   {catalog.groups.map((group) => {
                     const enabled = capabilityGroups.includes(group.id)
+                    const isSoon = comingSoonGroups.has(group.id)
                     return (
                       <button
-                        className={enabled ? 'dm-cap-card is-active' : 'dm-cap-card'}
+                        className={`dm-cap-card${enabled ? ' is-active' : ''}${isSoon ? ' is-coming-soon' : ''}`}
                         key={group.id}
-                        onClick={() => toggleCapability(group.id)}
+                        onClick={() => !isSoon && toggleCapability(group.id)}
                         type="button"
+                        disabled={isSoon}
                       >
                         <span className={`ap-chip ${toneClass[group.tone]}`}>
                           {group.label}
                         </span>
-                        <span className="dm-cap-count">{group.tools.length} tools</span>
+                        {isSoon
+                          ? <span className="dm-cap-soon">Coming soon</span>
+                          : <span className="dm-cap-count">{group.tools.length} tools</span>
+                        }
                       </button>
                     )
                   })}

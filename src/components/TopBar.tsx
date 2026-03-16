@@ -10,6 +10,7 @@ type TopBarProps = {
   activeView: 'office' | 'dashboard'
   onChangeView: (view: 'office' | 'dashboard') => void
   onGoHome: () => void
+  onAbout?: () => void
   demoMode?: boolean
 }
 
@@ -21,6 +22,7 @@ export default function TopBar({
   activeView,
   onChangeView,
   onGoHome,
+  onAbout,
   demoMode,
 }: TopBarProps) {
   const { wallet, connectWallet, disconnectWallet, sessionAccountId, logout } = useWalletContext()
@@ -68,6 +70,21 @@ export default function TopBar({
       </div>
 
       <div className="topbar-right">
+        {/* About */}
+        {onAbout && (
+          <button
+            className="theme-toggle"
+            onClick={onAbout}
+            type="button"
+            title="About Aivy Architecture"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 16v-4M12 8h.01" />
+            </svg>
+          </button>
+        )}
+
         {/* Theme toggle */}
         <button
           className="theme-toggle"

@@ -57,6 +57,21 @@ import { bonzoPlugin } from '@bonzofinancelabs/hak-bonzo-plugin'
 // (they use `import` syntax in .js files without "type": "module").
 // We inline lightweight plugin wrappers that replicate their tool logic directly.
 import { ethers } from 'ethers'
+import axios from 'axios'
+
+// Patch the global axios.create to inject x-api-key for SaucerSwap instances.
+// The hak-saucerswap-plugin calls axios.create({ baseURL: "https://api.saucerswap.finance" })
+// and the API now requires an API key via x-api-key header.
+if (process.env.SAUCERSWAP_API_KEY) {
+  const _origCreate = axios.create.bind(axios)
+  axios.create = function patchedCreate(config?: Parameters<typeof _origCreate>[0]) {
+    const instance = _origCreate(config)
+    if (config?.baseURL?.includes('saucerswap.finance')) {
+      instance.defaults.headers.common['x-api-key'] = process.env.SAUCERSWAP_API_KEY!
+    }
+    return instance
+  } as typeof axios.create
+}
 
 const CoinCapHederaPlugin = {
   name: 'CoinCapHederaPlugin',
@@ -308,6 +323,27 @@ console.log(`[Aivy] ${startupDeployments.length} agent(s) loaded from database.`
 // ─── Chat (OpenAI) ───────────────────────────────
 const chatEnabled = !!process.env.OPENAI_API_KEY
 const openai = chatEnabled ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null
+
+// Retry wrapper for OpenAI calls to handle 429 rate-limit errors
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn()
+    } catch (err: unknown) {
+      const status = (err as { status?: number }).status
+      if (status === 429 && attempt < maxRetries) {
+        // Parse retry-after header; fall back to exponential backoff (3s, 6s, 12s, 24s, 48s)
+        const retryAfter = Number((err as { headers?: Record<string, string> }).headers?.['retry-after']) || 0
+        const delay = Math.max(retryAfter * 1000, 3000 * Math.pow(2, attempt))
+        console.log(`[chat] Rate limited, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`)
+        await new Promise(r => setTimeout(r, delay))
+        continue
+      }
+      throw err
+    }
+  }
+  throw new Error('withRetry: unreachable')
+}
 
 const templateMissions: Record<string, { tagline: string; mission: string }> = {
   'treasury-sentinel': {
@@ -624,6 +660,8 @@ const defaultCapabilityGroupsByTemplate: Record<string, CapabilityGroupId[]> = {
     'pyth',
     'bonzo',
     'memejob',
+    'coincap',
+    'chainlink',
   ],
   'compliance-clerk': [
     'accountQueries',
@@ -1819,15 +1857,32 @@ const executeTool = async (toolName: string, params: Record<string, unknown>, ag
   const result = await execute(params)
 
   // HederaAIToolkit wraps results in JSON.stringify — parse back to object
+  let parsed: Record<string, unknown>
   if (typeof result === 'string') {
     try {
-      return JSON.parse(result) as ToolResponse
+      parsed = JSON.parse(result)
     } catch {
       return { raw: {}, humanMessage: result } as ToolResponse
     }
+  } else {
+    parsed = result as Record<string, unknown>
   }
 
-  return result as ToolResponse
+  // If the result already has humanMessage/raw, return as-is
+  if ('humanMessage' in parsed || 'raw' in parsed) {
+    return parsed as ToolResponse
+  }
+
+  // Plugin-native format: { success, error, ... } → normalize to ToolResponse
+  if (parsed.success === false && typeof parsed.error === 'string') {
+    throw new Error(parsed.error)
+  }
+
+  // Successful plugin result without humanMessage — synthesize one
+  const humanMsg = typeof parsed.message === 'string'
+    ? parsed.message
+    : (parsed.success === true ? `${toolName} completed successfully.` : JSON.stringify(parsed).slice(0, 200))
+  return { raw: parsed, humanMessage: humanMsg } as ToolResponse
 }
 
 /** Detect HBAR spending from tool name + params */
@@ -1847,8 +1902,11 @@ function detectSpendingAmount(toolName: string, params: Record<string, unknown>)
 const makeMirrorUrl = (type: ResultReference['type'], value: string) => {
   const encoded = encodeURIComponent(value)
   switch (type) {
-    case 'transaction':
-      return `${config.mirrorNodeUrl}/transactions?transaction.id=${encoded}`
+    case 'transaction': {
+      // Mirror Node path format: 0.0.XXXXX-SECONDS-NANOS (replace @ with - and first . after @ with -)
+      const mirrorTxId = value.replace('@', '-').replace(/\.(\d+)$/, '-$1')
+      return `${config.mirrorNodeUrl}/transactions/${encodeURIComponent(mirrorTxId)}`
+    }
     case 'topic':
       return `${config.mirrorNodeUrl}/topics/${encoded}`
     case 'contract':
@@ -2016,7 +2074,7 @@ const deployJobManagerContract = async () => {
   }
 
   const transaction = await new ContractCreateFlow()
-    .setGas(2_500_000)
+    .setGas(4_000_000)
     .setBytecode(compiledJobManager.bytecode)
     .execute(client)
   const receipt = await transaction.getReceipt(client)
@@ -2884,7 +2942,7 @@ app.post('/api/agents/:agentId/pause', requireAuth, async (request, response) =>
   }
 })
 
-app.delete('/api/agents/:agentId', requireAuth, (request, response) => {
+app.delete('/api/agents/:agentId', requireAuth, async (request, response) => {
   const deployment = db.getDeployment(request.params.agentId)
   if (!deployment) {
     response.status(404).json({ error: 'Deployment not found.' })
@@ -2895,11 +2953,54 @@ app.delete('/api/agents/:agentId', requireAuth, (request, response) => {
     return
   }
 
+  let refundedHbar = 0
+  let refundTxId: string | null = null
+
+  // Auto-refund remaining HBAR from dedicated agent accounts
+  if (deployment.walletType === 'dedicated' && deployment.agentAccountId && deployment.agentPrivateKey && !demoMode) {
+    try {
+      const agentClient = createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey)
+      // Query the agent's on-chain balance
+      const balanceResult = await executeTool('get_hbar_balance_query_tool', { accountId: deployment.agentAccountId })
+      const rawBalance = balanceResult.raw?.balance ?? balanceResult.raw?.hbarBalance
+      const balanceHbar = typeof rawBalance === 'number' ? rawBalance : parseFloat(String(rawBalance ?? '0'))
+
+      if (balanceHbar > 0.1) {
+        // Keep 0.01 HBAR for the transfer fee, refund the rest
+        const refundAmount = Math.floor((balanceHbar - 0.01) * 100) / 100
+        // Refund to the user's wallet (deployment.userId is their account ID)
+        // If the agent was created by the platform, refund to operator instead
+        const recipientId = SHARED_USER_IDS.has(deployment.userId)
+          ? config.operatorAccountId
+          : deployment.userId
+        if (recipientId && refundAmount > 0) {
+          const tx = await new TransferTransaction()
+            .addHbarTransfer(deployment.agentAccountId, new Hbar(-refundAmount))
+            .addHbarTransfer(recipientId, new Hbar(refundAmount))
+            .setTransactionMemo(`Aivy destroy: refund from ${deployment.name}`)
+            .execute(agentClient)
+          await tx.getReceipt(agentClient)
+          refundedHbar = refundAmount
+          refundTxId = tx.transactionId?.toString() ?? null
+          console.log(`[Aivy] Refunded ${refundAmount} HBAR from ${deployment.name} (${deployment.agentAccountId}) to ${recipientId}`)
+        }
+      }
+    } catch (err) {
+      console.error(`[Aivy] Failed to refund HBAR from ${deployment.name}:`, err instanceof Error ? err.message : err)
+      // Continue with deletion even if refund fails
+    }
+  }
+
+  // Stop any active schedules/pollers
+  stopSchedule(deployment.id)
+  stopPoller(deployment.id)
+
   db.runInTransaction(() => {
     db.deleteDeployment(request.params.agentId)
-    pushActivity(`${deployment.name} removed from the Aivy floor.`, 'system')
+    const refundMsg = refundedHbar > 0 ? ` (${refundedHbar} HBAR refunded)` : ''
+    pushActivity(`${deployment.name} destroyed and removed from the Aivy floor.${refundMsg}`, 'system')
   })
-  response.status(204).end()
+  response.json({ ok: true, refundedHbar, refundTxId })
 })
 
 app.delete('/api/agents/:agentId/chat', requireAuth, (request, response) => {
@@ -3119,13 +3220,13 @@ async function runChatLoop(
   while (iterations < maxIterations) {
     iterations++
 
-    const completion = await openai.chat.completions.create({
+    const completion = await withRetry(() => openai!.chat.completions.create({
       model: 'gpt-4o',
       messages: history as OpenAI.ChatCompletionMessageParam[],
       tools: openaiTools.length > 0 ? openaiTools : undefined,
       temperature: 0.3,
       max_tokens: 1024,
-    })
+    }))
 
     const choice = completion.choices[0]
     if (!choice) break
@@ -3208,8 +3309,10 @@ async function runChatLoop(
           )
 
           toolResultContent = JSON.stringify({ humanMessage: result.humanMessage, raw: result.raw })
+          console.log(`[chat] ${deployment.name} tool result for ${originalFnName}:`, toolResultContent.slice(0, 500))
         } catch (err) {
           toolResultContent = JSON.stringify({ error: err instanceof Error ? err.message : 'Tool execution failed.' })
+          console.error(`[chat] ${deployment.name} tool error for ${originalFnName}:`, err instanceof Error ? err.message : err)
         }
       }
 
@@ -3432,13 +3535,13 @@ app.post('/api/chat/route', requireAuth, chatLimiter, async (request, response) 
     let iterations = 0
     while (iterations < 5) {
       iterations++
-      const completion = await openai.chat.completions.create({
+      const completion = await withRetry(() => openai!.chat.completions.create({
         model: 'gpt-4o',
         messages: history as OpenAI.ChatCompletionMessageParam[],
         tools: openaiTools.length > 0 ? openaiTools : undefined,
         temperature: 0.3,
         max_tokens: 1024,
-      })
+      }))
 
       const choice = completion.choices[0]
       if (!choice) break
@@ -3496,8 +3599,10 @@ app.post('/api/chat/route', requireAuth, chatLimiter, async (request, response) 
             )
 
             toolResultContent = JSON.stringify({ humanMessage: result.humanMessage, raw: result.raw })
+            console.log(`[chat] ${deployment.name} tool result for ${originalFnName2}:`, toolResultContent.slice(0, 500))
           } catch (err) {
             toolResultContent = JSON.stringify({ error: err instanceof Error ? err.message : 'Tool failed.' })
+            console.error(`[chat] ${deployment.name} tool error for ${originalFnName2}:`, err instanceof Error ? err.message : err)
           }
         }
 
@@ -4523,6 +4628,17 @@ app.get('/api/jobs', requireAuth, readLimiter, (request, response) => {
 app.get('/api/jobs/:jobId', requireAuth, readLimiter, (request, response) => {
   const job = db.getJob(request.params.jobId)
   if (!job) { response.status(404).json({ error: 'Job not found.' }); return }
+
+  // Verify user owns either the client or provider agent
+  const clientAgent = db.getDeployment(job.clientAgentId)
+  const providerAgent = db.getDeployment(job.providerAgentId)
+  const ownsClient = clientAgent && assertAgentOwnership(clientAgent, request)
+  const ownsProvider = providerAgent && assertAgentOwnership(providerAgent, request)
+  if (!ownsClient && !ownsProvider) {
+    response.status(403).json({ error: 'You do not own either agent in this job.' })
+    return
+  }
+
   response.json({ job })
 })
 
@@ -4594,6 +4710,13 @@ app.post('/api/jobs/:jobId/complete', requireAuth, toolLimiter, (request, respon
   if (!job) { response.status(404).json({ error: 'Job not found.' }); return }
   if (job.status !== 'Submitted') { response.status(400).json({ error: `Job is ${job.status}, expected Submitted.` }); return }
 
+  // Only the client agent's owner (evaluator) can approve
+  const clientAgent = db.getDeployment(job.clientAgentId)
+  if (!clientAgent || !assertAgentOwnership(clientAgent, request)) {
+    response.status(403).json({ error: 'Only the client agent owner can approve jobs.' })
+    return
+  }
+
   const providerAgent = db.getDeployment(job.providerAgentId)
   if (!providerAgent) { response.status(404).json({ error: 'Provider agent not found.' }); return }
 
@@ -4611,9 +4734,8 @@ app.post('/api/jobs/:jobId/complete', requireAuth, toolLimiter, (request, respon
 
   db.updateJobStatus(job.id, 'Completed', null, payTxId)
 
-  const clientAgent = db.getDeployment(job.clientAgentId)
   pushActivity(
-    `Job completed: ${clientAgent?.name ?? 'agent'} paid ${providerAgent.name} ${job.budgetHbar} HBAR`,
+    `Job completed: ${clientAgent.name} paid ${providerAgent.name} ${job.budgetHbar} HBAR`,
     'success',
   )
 
@@ -4629,6 +4751,13 @@ app.post('/api/jobs/:jobId/reject', requireAuth, toolLimiter, (request, response
   if (!job) { response.status(404).json({ error: 'Job not found.' }); return }
   if (job.status !== 'Submitted' && job.status !== 'Funded') {
     response.status(400).json({ error: `Job is ${job.status}, expected Submitted or Funded.` })
+    return
+  }
+
+  // Only the client agent's owner (evaluator) can reject
+  const clientAgentCheck = db.getDeployment(job.clientAgentId)
+  if (!clientAgentCheck || !assertAgentOwnership(clientAgentCheck, request)) {
+    response.status(403).json({ error: 'Only the client agent owner can reject jobs.' })
     return
   }
 

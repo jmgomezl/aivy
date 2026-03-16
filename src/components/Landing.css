@@ -877,6 +877,24 @@
   color: #8390ad;
 }
 
+.landing-about-link {
+  background: none;
+  border: none;
+  color: #5ad6b5;
+  font-size: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  opacity: 0.75;
+  transition: opacity 0.15s;
+}
+
+.landing-about-link:hover {
+  opacity: 1;
+}
+
 /* ═══════════════════════════════════════════════════
    Mobile
    ═══════════════════════════════════════════════════ */
