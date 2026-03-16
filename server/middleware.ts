@@ -10,13 +10,7 @@ export function authMiddleware(demoMode: boolean) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     const authReq = req as AuthRequest
 
-    if (demoMode) {
-      authReq.userId = 'demo'
-      authReq.accountId = null
-      next()
-      return
-    }
-
+    // Always check JWT first — even in demo mode, a logged-in user's token takes priority
     const header = req.headers.authorization
     if (header?.startsWith('Bearer ')) {
       const token = header.slice(7)
@@ -27,6 +21,14 @@ export function authMiddleware(demoMode: boolean) {
         next()
         return
       }
+    }
+
+    // Fall back: demo mode gives shared 'demo' identity; otherwise unauthenticated
+    if (demoMode) {
+      authReq.userId = 'demo'
+      authReq.accountId = null
+      next()
+      return
     }
 
     authReq.userId = null

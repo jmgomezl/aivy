@@ -46,6 +46,7 @@ async function authenticateWithServer(
 export function useWallet() {
   const [wallet, setWallet] = useState<WalletState>({ status: 'idle' })
   const [authError, setAuthError] = useState<string | null>(null)
+  const [authVersion, setAuthVersion] = useState(0)
 
   const connectWallet = async () => {
     if (!isWalletConnectConfigured) {
@@ -63,12 +64,14 @@ export function useWallet() {
       setWallet({ status: 'connected', ...session })
 
       // Authenticate with backend after wallet connects (with retry)
-      const ok = await authenticateWithServer(session.accountId, setAuthError)
+      let ok = await authenticateWithServer(session.accountId, setAuthError)
       if (!ok) {
         // Retry once after a short delay
         await new Promise((r) => setTimeout(r, 1500))
-        await authenticateWithServer(session.accountId, setAuthError)
+        ok = await authenticateWithServer(session.accountId, setAuthError)
       }
+      // Signal that auth token changed — triggers data refresh in App
+      if (ok) setAuthVersion((v) => v + 1)
     } catch (error) {
       setWallet({
         status: 'error',
@@ -107,5 +110,5 @@ export function useWallet() {
     window.location.reload()
   }
 
-  return { wallet, connectWallet, disconnectWallet, sessionAccountId, logout, authError }
+  return { wallet, connectWallet, disconnectWallet, sessionAccountId, logout, authError, authVersion }
 }

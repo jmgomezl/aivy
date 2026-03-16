@@ -120,10 +120,15 @@ function App() {
   // ─── Hooks ────────────────────────────────────
   const live = useLiveData()
   const toolCatalog = useToolCatalog()
-  const { wallet, connectWallet, disconnectWallet, sessionAccountId, logout, authError, balanceVersion, invalidateBalances } = useWalletContext()
+  const { wallet, connectWallet, disconnectWallet, sessionAccountId, logout, authError, authVersion, balanceVersion, invalidateBalances } = useWalletContext()
 
   // Derive user account ID from connected wallet or persisted session
   const userAccountId = wallet.status === 'connected' ? wallet.accountId : sessionAccountId
+
+  // Refresh agents after auth token changes (e.g. wallet login replaces demo guest token)
+  useEffect(() => {
+    if (authVersion > 0) void live.refreshLive()
+  }, [authVersion]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Derived State ────────────────────────────
   const selectedAgent = live.agents.find((a) => a.id === selectedAgentId) ?? null
@@ -412,6 +417,9 @@ function App() {
   // ─── Demo Seed Handler ──────────────────────────
   const handleTryDemo = useCallback(async () => {
     try {
+      // Clear any existing session so demo starts fresh
+      const { clearToken } = await import('./lib/auth')
+      clearToken()
       const result = await requestJson<{ seeded: number; token?: string }>('/api/demo/seed', { method: 'POST' })
       // Store guest token so subsequent API calls are authenticated
       if (result.token) {
