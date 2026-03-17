@@ -393,6 +393,93 @@
   margin-top: 3px;
 }
 
+/* ─── Image Attach Button ────────────────────────── */
+.chat-attach {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  align-self: center;
+}
+
+.chat-attach:hover {
+  background: rgba(90, 214, 181, 0.15);
+  color: #5ad6b5;
+}
+
+.chat-attach:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ─── Image Preview Strip ────────────────────────── */
+.chat-image-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgba(90, 214, 181, 0.04);
+  animation: chat-msg-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.chat-image-preview img {
+  height: 52px;
+  width: 52px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid rgba(90, 214, 181, 0.25);
+}
+
+.chat-image-label {
+  font-size: 11px;
+  color: #5ad6b5;
+  font-family: 'VT323', monospace;
+  letter-spacing: 0.5px;
+}
+
+.chat-image-remove {
+  margin-left: auto;
+  background: rgba(242, 95, 92, 0.15);
+  color: #f25f5c;
+  border: 1px solid rgba(242, 95, 92, 0.2);
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  line-height: 1;
+}
+
+.chat-image-remove:hover {
+  background: rgba(242, 95, 92, 0.3);
+}
+
+/* ─── Image in Chat Bubble ───────────────────────── */
+.chat-bubble-image {
+  margin-bottom: 8px;
+}
+
+.chat-bubble-image img {
+  max-width: 200px;
+  max-height: 150px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid rgba(90, 214, 181, 0.2);
+}
+
 /* ─── Mobile Responsive ───────────────────────── */
 @media (max-width: 768px) {
   .chat-input {

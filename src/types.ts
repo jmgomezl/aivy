@@ -231,6 +231,7 @@ export type ChatMessage = {
   content: string
   toolName?: string
   toolParams?: Record<string, unknown>
+  imageUrl?: string
   timestamp: string
 }
 
