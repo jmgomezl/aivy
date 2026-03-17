@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import cors from 'cors'
@@ -41,6 +41,7 @@ import {
   PrivateKey,
   TransferTransaction,
 } from '@hashgraph/sdk'
+import multer from 'multer'
 import { z } from 'zod'
 import { initMasterKey } from './crypto.js'
 import * as db from './db.js'
@@ -421,8 +422,17 @@ function buildAgentSystemPrompt(deployment: DeploymentRecord, userAccountId?: st
         ].join('\n')
       : 'No spending cap enforced (vault not active).',
     '',
+    '## NFT MINTING FROM IMAGES',
+    'When the user attaches an image and asks to mint an NFT:',
+    '1. Use create_non_fungible_token_tool to create a new NFT collection (use the name they provide, or "Aivy NFT")',
+    '2. Then use mint_non_fungible_token_tool with the EXACT metadata URI from the message — look for "[NFT metadata URI: https://...]"',
+    '3. CRITICAL: You MUST use the exact URL from the message. NEVER make up or fabricate IPFS URIs. The metadata URL will start with https://aivylabs.xyz/uploads/',
+    '4. Pass it in the "uris" parameter as an array: {"tokenId": "0.0.XXX", "uris": ["https://aivylabs.xyz/uploads/..."]}',
+    'Always create the collection first, then mint. Report the token ID, serial number, and a link to view it on HashScan.',
+    '',
     'Be concise but informative. Use markdown formatting: **bold** for key values, `code` for IDs/addresses, and bullet lists with "- " for structured data.',
     'Format amounts clearly (e.g., "**142.5 HBAR**"). When you return tool results, summarize them in a human-friendly way with proper formatting.',
+    'IMPORTANT: All HashScan links MUST use testnet, not mainnet. Use https://hashscan.io/testnet/ (never /mainnet/).',
     `For any tool that requires a topicId, use "${deployment.topicId ?? 'none yet'}" unless specified.`,
   ]
     .filter(Boolean)
@@ -1854,6 +1864,17 @@ const executeTool = async (toolName: string, params: Record<string, unknown>, ag
     input: Record<string, unknown>,
   ) => Promise<string | ToolResponse>
 
+  // Map form field names to Hedera Agent Kit expected parameter names
+  if (toolName === 'mint_non_fungible_token_tool') {
+    console.log('[NFT-DEBUG] mint params BEFORE mapping:', JSON.stringify(params))
+    if (params['metadata'] && !params['uris']) {
+      const meta = params['metadata']
+      params['uris'] = Array.isArray(meta) ? meta : [meta]
+      delete params['metadata']
+      console.log('[NFT-DEBUG] mint params AFTER mapping:', JSON.stringify(params))
+    }
+  }
+
   const result = await execute(params)
 
   // HederaAIToolkit wraps results in JSON.stringify — parse back to object
@@ -2272,6 +2293,25 @@ const app = express()
 
 app.use(cors())
 app.use(express.json())
+
+// ─── NFT Image Uploads ─────────────────────────────────
+const uploadsDir = resolve(__dirname, '..', 'uploads')
+mkdirSync(uploadsDir, { recursive: true })
+app.use('/uploads', express.static(uploadsDir))
+const nftUpload = multer({
+  storage: multer.diskStorage({
+    destination: uploadsDir,
+    filename: (_req, file, cb) => {
+      const ext = file.originalname.split('.').pop() ?? 'png'
+      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`)
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    cb(null, /^image\//.test(file.mimetype))
+  },
+})
+
 app.use(authMiddleware(demoMode))
 
 // ─── Auth Routes ────────────────────────────────────
@@ -2310,6 +2350,40 @@ app.post('/api/auth/verify', authLimiter, async (request, response) => {
   const user = db.getOrCreateUser(accountId)
   const token = issueToken(user.id, accountId)
   response.json({ token, user: { id: user.id, accountId: user.hederaAccountId, displayName: user.displayName } })
+})
+
+// ─── NFT Image Upload ──────────────────────────────────
+app.post('/api/nft/upload', requireAuth, nftUpload.single('image'), (request, response) => {
+  console.log('[NFT-UPLOAD] Received upload request')
+  const file = (request as any).file as Express.Multer.File | undefined
+  if (!file) {
+    console.log('[NFT-UPLOAD] No file in request')
+    response.status(400).json({ error: 'No image file provided.' })
+    return
+  }
+  console.log('[NFT-UPLOAD] File:', file.filename, file.size, 'bytes')
+
+  // Build public URL — use the request host so it works in dev and production
+  const protocol = request.headers['x-forwarded-proto'] || 'http'
+  const host = request.headers.host || `localhost:${config.port}`
+  const baseUrl = `${protocol}://${host}`
+  const imageUrl = `${baseUrl}/uploads/${file.filename}`
+
+  // Generate HIP-412 compliant metadata JSON alongside the image
+  const metadataFilename = file.filename.replace(/\.[^.]+$/, '.json')
+  const nftName = (request.body?.name as string) || 'Aivy NFT'
+  const nftDescription = (request.body?.description as string) || 'Minted via Aivy AI Agent Platform'
+  const metadata = {
+    name: nftName,
+    description: nftDescription,
+    image: imageUrl,
+    type: file.mimetype,
+    creator: 'Aivy — aivylabs.xyz',
+  }
+  writeFileSync(resolve(uploadsDir, metadataFilename), JSON.stringify(metadata, null, 2))
+  const metadataUrl = `${baseUrl}/uploads/${metadataFilename}`
+
+  response.json({ imageUrl, metadataUrl, filename: file.filename })
 })
 
 app.get('/api/live', readLimiter, async (request, response) => {
@@ -4005,6 +4079,19 @@ const demoToolResponses: Record<string, (params: Record<string, unknown>) => Too
         `- **Token ID**: \`${tokenId}\``,
         `- **Type**: Non-Fungible`,
       ].join('\n'),
+    }
+  },
+  mint_non_fungible_token_tool: (params) => {
+    const tokenId = params['tokenId'] ?? '0.0.9999'
+    const uris = (params['metadata'] as string[]) ?? (params['uris'] as string[]) ?? []
+    return {
+      raw: { transactionId: nextDemoTxId(), tokenId, serialNumber: 1 },
+      humanMessage: [
+        `**NFT minted** on collection \`${tokenId}\``,
+        `- **Serial**: #1`,
+        uris[0] ? `- **Metadata**: ${uris[0]}` : '',
+        `- **View**: [HashScan](https://hashscan.io/testnet/token/${tokenId})`,
+      ].filter(Boolean).join('\n'),
     }
   },
   get_exchange_rate_tool: () => ({

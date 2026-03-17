@@ -12,6 +12,7 @@ dist
 dist-ssr
 server-dist
 data/
+uploads/
 *.local
 
 # Environment
