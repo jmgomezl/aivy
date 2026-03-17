@@ -2226,15 +2226,25 @@ const fetchAllTopicMessages = async (topicId: string) => {
   return allMessages
 }
 
-const buildStats = (items?: DeploymentRecord[]) => {
+const buildStats = async (items?: DeploymentRecord[]) => {
   const deployments = items ?? db.getAllDeployments()
 
-  // Sum net balance (funded - spent) across all agents
+  // Fetch real on-chain balances from mirror node for all agents
   let totalBalance = 0
-  for (const d of deployments) {
-    const s = db.getSpendingSummary(d.id)
-    totalBalance += s.totalFunded - s.totalSpent
-  }
+  const balancePromises = deployments.map(async (d) => {
+    if (!d.agentAccountId) return 0
+    try {
+      const res = await fetch(`${config.mirrorNodeUrl}/accounts/${d.agentAccountId}`)
+      if (!res.ok) return 0
+      const data = await res.json() as { balance?: { balance?: number } }
+      const tinybar = data?.balance?.balance ?? 0
+      return tinybar / 1e8 // convert tinybars to HBAR
+    } catch {
+      return 0
+    }
+  })
+  const balances = await Promise.all(balancePromises)
+  totalBalance = balances.reduce((sum, b) => sum + b, 0)
 
   return {
     connectedAgents: deployments.length,
@@ -2280,7 +2290,7 @@ const buildLivePayload = async (userId?: string | null) => {
     network: demoMode ? 'testnet' : config.network,
     operatorAccountId: config.operatorAccountId || (demoMode ? demoAccountId : null),
     mirrorNodeUrl: config.mirrorNodeUrl,
-    stats: buildStats(deploymentItems),
+    stats: await buildStats(deploymentItems),
     deployments: deploymentItems.map(safeDeployment),
     activity: [...recentActivity, ...mirrorTransactions, ...topicMessages.flat()]
       .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
@@ -2394,7 +2404,7 @@ app.get('/api/live', readLimiter, async (request, response) => {
     response.status(500).json({
       configured: isConfigured,
       error: error instanceof Error ? error.message : 'Unknown live payload error.',
-      stats: buildStats(),
+      stats: await buildStats(),
       deployments: [],
       activity: [],
     })
