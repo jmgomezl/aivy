@@ -11,7 +11,7 @@ import TriggerManager from './TriggerManager'
 import type { CapabilityGroupId } from '../types'
 import './AgentPanel.css'
 
-const comingSoonGroups = new Set<CapabilityGroupId>(['saucerswap', 'bonzo', 'memejob', 'coincap'])
+const comingSoonGroups = new Set<CapabilityGroupId>(['saucerswap', 'memejob', 'coincap'])
 
 type AgentPanelProps = {
   agent: LiveAgent

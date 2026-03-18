@@ -178,6 +178,7 @@ const capabilityGroupIds = [
   'bonzo',
   'coincap',
   'chainlink',
+  'sentiment',
 ] as const
 
 // Third-party plugin tool names — always use .method (the snake_case identifier
@@ -190,6 +191,7 @@ const bonzoTools = bonzoPlugin.tools().map((t: { method: string }) => t.method)
 // CoinCap & Chainlink plugins have broken ESM packaging — hardcode their single tool names
 const coincapTools = ['get_hbar_price_in_USD_tool']
 const chainlinkTools = ['get_chainlink_price_feed_tool']
+const sentimentTools = ['crypto_sentiment_tool']
 
 type CapabilityGroupId = (typeof capabilityGroupIds)[number]
 type ActivityTone = 'system' | 'success' | 'vault'
@@ -279,7 +281,7 @@ type ResultReference = {
 
 const capabilityGroupSchema = z.enum(capabilityGroupIds)
 
-const VALID_TEMPLATE_IDS = ['treasury-sentinel', 'yield-router', 'compliance-clerk', 'governance-relay'] as const
+const VALID_TEMPLATE_IDS = ['treasury-sentinel', 'yield-router', 'compliance-clerk', 'governance-relay', 'bonzo-keeper'] as const
 
 const deploymentSchema = z.object({
   templateId: z.enum(VALID_TEMPLATE_IDS),
@@ -363,6 +365,10 @@ const templateMissions: Record<string, { tagline: string; mission: string }> = {
     tagline: 'Governance & Coordination Agent',
     mission: 'Manage HCS topics, coordinate proposals, and handle scheduled transactions for governance flows.',
   },
+  'bonzo-keeper': {
+    tagline: 'Intelligent DeFi Keeper Agent',
+    mission: 'Manage yield on Bonzo Finance lending vaults with sentiment-aware harvesting and autonomous deposit/withdraw strategies.',
+  },
 }
 
 function buildAgentSystemPrompt(deployment: DeploymentRecord, userAccountId?: string): string {
@@ -429,6 +435,39 @@ function buildAgentSystemPrompt(deployment: DeploymentRecord, userAccountId?: st
     '3. CRITICAL: You MUST use the exact URL from the message. NEVER make up or fabricate IPFS URIs. The metadata URL will start with https://aivylabs.xyz/uploads/',
     '4. Pass it in the "uris" parameter as an array: {"tokenId": "0.0.XXX", "uris": ["https://aivylabs.xyz/uploads/..."]}',
     'Always create the collection first, then mint. Report the token ID, serial number, and a link to view it on HashScan.',
+    '',
+    // Bonzo Keeper specific instructions
+    deployment.templateId === 'bonzo-keeper' ? [
+      '## BONZO KEEPER — INTELLIGENT DeFi AGENT',
+      'You are a sentiment-aware DeFi keeper for Bonzo Finance lending vaults on Hedera.',
+      '',
+      '### Your Core Capabilities:',
+      '1. **Market Analysis**: Use crypto_sentiment_tool to check Fear & Greed Index before making decisions',
+      '2. **Deposit**: Use bonzo_deposit_tool to supply tokens into Bonzo lending pools',
+      '3. **Withdraw**: Use bonzo_withdraw_tool to pull tokens from lending pools',
+      '4. **Market Data**: Use bonzo_market_data_tool to check current APY rates',
+      '5. **Price Feeds**: Use Pyth/Chainlink/CoinCap for real-time price data',
+      '',
+      '### Decision Framework:',
+      '- When sentiment is EXTREME FEAR (0-25): Recommend withdrawing and moving to stables',
+      '- When sentiment is FEAR (25-40): Recommend cautious positions, harvest rewards',
+      '- When sentiment is NEUTRAL (40-60): Continue current strategy normally',
+      '- When sentiment is GREED (60-75): Consider new deposits, let rewards accumulate',
+      '- When sentiment is EXTREME GREED (75-100): Take some profits, reduce exposure',
+      '',
+      '### Workflow for "I want yield on my HBAR":',
+      '1. Check sentiment with crypto_sentiment_tool',
+      '2. Check Bonzo rates with bonzo_market_data_tool',
+      '3. Recommend the best strategy based on sentiment + rates',
+      '4. If user agrees, approve tokens then deposit',
+      '',
+      '### Auto-Mode Keeper Logic:',
+      'When running autonomously, follow this loop:',
+      '1. Check sentiment → if bearish, harvest and convert to stables',
+      '2. Check Bonzo rates → find best APY opportunities',
+      '3. Report findings and actions taken',
+      '',
+    ].join('\n') : '',
     '',
     'Be concise but informative. Use markdown formatting: **bold** for key values, `code` for IDs/addresses, and bullet lists with "- " for structured data.',
     'Format amounts clearly (e.g., "**142.5 HBAR**"). When you return tool results, summarize them in a human-friendly way with proper formatting.',
@@ -638,6 +677,13 @@ const capabilityGroups: ToolCatalogGroup[] = [
     tools: coincapTools,
   },
   {
+    id: 'sentiment',
+    label: 'Market Sentiment',
+    description: 'Crypto Fear & Greed Index and market sentiment analysis for keeper decisions.',
+    tone: 'rose',
+    tools: sentimentTools,
+  },
+  {
     id: 'chainlink',
     label: 'Chainlink Oracles',
     description: 'Price feeds from Chainlink decentralised oracles (BTC, ETH, HBAR, LINK, USDC, USDT, DAI).',
@@ -691,6 +737,21 @@ const defaultCapabilityGroupsByTemplate: Record<string, CapabilityGroupId[]> = {
     'transactionQueries',
     'networkQueries',
   ],
+  'bonzo-keeper': [
+    'accounts',
+    'accountQueries',
+    'tokens',
+    'tokenQueries',
+    'contracts',
+    'contractQueries',
+    'transactionQueries',
+    'networkQueries',
+    'bonzo',
+    'pyth',
+    'coincap',
+    'chainlink',
+    'sentiment',
+  ],
 }
 
 const suggestedToolsByTemplate: Record<string, string[]> = {
@@ -722,6 +783,12 @@ const suggestedToolsByTemplate: Record<string, string[]> = {
     coreConsensusPluginToolNames.UPDATE_TOPIC_TOOL,
     coreAccountPluginToolNames.SIGN_SCHEDULE_TRANSACTION_TOOL,
     coreAccountPluginToolNames.SCHEDULE_DELETE_TOOL,
+  ],
+  'bonzo-keeper': [
+    ...bonzoTools,
+    ...pythTools.slice(0, 1),
+    ...coincapTools,
+    ...chainlinkTools,
   ],
 }
 
@@ -1512,6 +1579,42 @@ const workflowsByTemplate: Record<string, ToolWorkflow[]> = {
       },
     },
   ],
+  'bonzo-keeper': [
+    {
+      id: 'bonzo-market',
+      title: 'Check Bonzo rates',
+      description: 'Fetch real-time market data from Bonzo Finance.',
+      toolName: 'bonzo_market_data_tool',
+      params: {},
+    },
+    {
+      id: 'bonzo-deposit',
+      title: 'Deposit to Bonzo',
+      description: 'Supply tokens to a Bonzo lending pool.',
+      toolName: 'bonzo_deposit_tool',
+      params: {
+        tokenSymbol: 'USDC',
+        amount: 10,
+      },
+    },
+    {
+      id: 'bonzo-withdraw',
+      title: 'Withdraw from Bonzo',
+      description: 'Withdraw supplied tokens from Bonzo.',
+      toolName: 'bonzo_withdraw_tool',
+      params: {
+        tokenSymbol: 'USDC',
+        amount: 10,
+      },
+    },
+    {
+      id: 'bonzo-sentiment',
+      title: 'Check crypto sentiment',
+      description: 'Analyze current market sentiment for decision-making.',
+      toolName: 'crypto_sentiment_tool',
+      params: {},
+    },
+  ],
 }
 
 const formatTimestamp = (date = new Date()) =>
@@ -1768,6 +1871,7 @@ const toolDescriptionOverrides: Record<string, string> = {
   bonzo_repay_tool: 'Repay borrowed tokens on Bonzo lending protocol. Params: required { tokenSymbol, amount, rateMode }, optional { repayAll }.',
   get_hbar_price_in_USD_tool: 'Get the current HBAR price in USD from CoinCap API. No params required.',
   get_chainlink_price_feed_tool: 'Get a price feed from Chainlink oracle on Hedera. Params: coinId (string, e.g. "HBAR", "BTC", "ETH", "LINK", "USDC", "USDT", "DAI").',
+  crypto_sentiment_tool: 'Analyze crypto market sentiment using the Fear & Greed Index and Bonzo lending rates. Returns sentiment score (0-100), trend, and keeper recommendations for DeFi strategy. No params required. Use this before making deposit/withdraw/harvest decisions.',
 }
 
 let toolCatalogCache: {
@@ -1853,7 +1957,75 @@ const buildToolCatalog = () => {
   return toolCatalogCache
 }
 
+// ─── Crypto Sentiment Tool (Fear & Greed Index) ───────────────
+const fetchCryptoSentiment = async (): Promise<ToolResponse> => {
+  try {
+    const [fngRes, bonzoRes] = await Promise.all([
+      fetch('https://api.alternative.me/fng/?limit=7'),
+      fetch('https://mainnet-data-staging.bonzo.finance/market').catch(() => null),
+    ])
+    const fngData = (await fngRes.json()) as { data: Array<{ value: string; value_classification: string; timestamp: string }> }
+    const latest = fngData.data[0]
+    const history = fngData.data.slice(0, 7)
+    const avg7d = Math.round(history.reduce((s, d) => s + Number(d.value), 0) / history.length)
+    const trend = Number(history[0].value) > Number(history[history.length - 1].value) ? 'improving' : 'declining'
+
+    // Bonzo market data if available
+    let bonzoSummary = ''
+    if (bonzoRes?.ok) {
+      const bonzoData = (await bonzoRes.json()) as Array<{ symbol: string; supplyAPY: string; borrowAPY: string; availableLiquidityUSD: string }>
+      const topPools = bonzoData
+        .filter((m: any) => Number(m.availableLiquidityUSD) > 1000)
+        .sort((a: any, b: any) => Number(b.supplyAPY) - Number(a.supplyAPY))
+        .slice(0, 5)
+      if (topPools.length > 0) {
+        bonzoSummary = '\n\n**Top Bonzo Lending Rates:**\n' +
+          topPools.map((p: any) => `- **${p.symbol}**: ${(Number(p.supplyAPY) * 100).toFixed(2)}% supply APY, $${Number(p.availableLiquidityUSD).toLocaleString()} liquidity`).join('\n')
+      }
+    }
+
+    const score = Number(latest.value)
+    let recommendation = ''
+    if (score <= 25) recommendation = 'EXTREME FEAR — Consider harvesting rewards immediately and moving to stablecoins. High risk of further decline.'
+    else if (score <= 40) recommendation = 'FEAR — Cautious approach. Harvest rewards and hold in stable positions. Wait for sentiment improvement before new deposits.'
+    else if (score <= 60) recommendation = 'NEUTRAL — Normal operations. Continue current strategy with regular harvesting schedule.'
+    else if (score <= 75) recommendation = 'GREED — Market is optimistic. Consider letting rewards accumulate for price appreciation. Good time for new deposits.'
+    else recommendation = 'EXTREME GREED — Market may be overheated. Consider taking profits and reducing exposure. Harvest and convert some to stables.'
+
+    return {
+      humanMessage: [
+        `**Crypto Market Sentiment Analysis**`,
+        ``,
+        `**Fear & Greed Index**: ${latest.value}/100 — **${latest.value_classification}**`,
+        `**7-day Average**: ${avg7d}/100 (${trend})`,
+        `**Trend**: ${history.map(d => d.value).join(' → ')}`,
+        ``,
+        `**Keeper Recommendation**: ${recommendation}`,
+        bonzoSummary,
+      ].join('\n'),
+      raw: {
+        score,
+        classification: latest.value_classification,
+        average7d: avg7d,
+        trend,
+        recommendation,
+        history: history.map(d => ({ value: Number(d.value), label: d.value_classification })),
+      },
+    }
+  } catch (err) {
+    return {
+      humanMessage: `Failed to fetch sentiment data: ${err instanceof Error ? err.message : String(err)}`,
+      raw: { error: String(err) },
+    }
+  }
+}
+
 const executeTool = async (toolName: string, params: Record<string, unknown>, agentClient?: Client) => {
+  // Handle custom tools that aren't in HederaAIToolkit
+  if (toolName === 'crypto_sentiment_tool') {
+    return fetchCryptoSentiment()
+  }
+
   const toolkit = getToolkit(undefined, agentClient)
   const tool = toolkit.getTools()[toolName]
   if (!tool) {
@@ -3529,6 +3701,10 @@ function routeMessageToAgent(
       keywords: ['topic', 'proposal', 'vote', 'governance', 'schedule', 'consensus', 'message', 'hcs'],
       templateId: 'governance-relay',
     },
+    {
+      keywords: ['bonzo', 'lending', 'borrow', 'deposit bonzo', 'yield', 'sentiment', 'fear', 'greed', 'keeper', 'apy', 'supply rate'],
+      templateId: 'bonzo-keeper',
+    },
   ]
 
   // Score each template
@@ -4120,6 +4296,34 @@ const demoToolResponses: Record<string, (params: Record<string, unknown>) => Too
     raw: { transactionId: nextDemoTxId(), status: 'SUCCESS', scheduleId: nextDemoAccountId() },
     humanMessage: `**Scheduled transaction** created\n- **Amount**: ${params['amount'] ?? 1} HBAR\n- **Status**: Pending execution`,
   }),
+  crypto_sentiment_tool: () => ({
+    raw: { score: 42, classification: 'Fear', average7d: 38, trend: 'improving' },
+    humanMessage: '**Crypto Market Sentiment**\n\n**Fear & Greed Index**: 42/100 — **Fear**\n**7-day Average**: 38/100 (improving)\n**Trend**: 35 → 38 → 40 → 42\n\n**Keeper Recommendation**: FEAR — Cautious approach. Harvest rewards and hold in stable positions.',
+  }),
+  bonzo_market_data_tool: () => ({
+    raw: { markets: [{ symbol: 'USDC', supplyAPY: 0.048, borrowAPY: 0.067 }, { symbol: 'HBAR', supplyAPY: 0.032, borrowAPY: 0.055 }] },
+    humanMessage: '**Bonzo Lending Markets**\n\n- **USDC**: 4.80% supply APY, 6.70% borrow APY\n- **HBAR**: 3.20% supply APY, 5.50% borrow APY\n- **SAUCE**: 2.10% supply APY, 4.30% borrow APY',
+  }),
+  bonzo_deposit_tool: (params) => ({
+    raw: { transactionId: nextDemoTxId(), tokenSymbol: params['tokenSymbol'], amount: params['amount'] },
+    humanMessage: `**Deposited** ${params['amount']} ${params['tokenSymbol']} into Bonzo lending pool\n- **APY**: ~4.8%\n- **Transaction**: \`${nextDemoTxId()}\``,
+  }),
+  bonzo_withdraw_tool: (params) => ({
+    raw: { transactionId: nextDemoTxId(), tokenSymbol: params['tokenSymbol'], amount: params['amount'] },
+    humanMessage: `**Withdrew** ${params['amount']} ${params['tokenSymbol']} from Bonzo lending pool\n- **Transaction**: \`${nextDemoTxId()}\``,
+  }),
+  approve_erc20_tool: (params) => ({
+    raw: { transactionId: nextDemoTxId(), tokenSymbol: params['tokenSymbol'], amount: params['amount'] },
+    humanMessage: `**Approved** ${params['amount'] ?? 'max'} ${params['tokenSymbol']} for Bonzo LendingPool\n- **Transaction**: \`${nextDemoTxId()}\``,
+  }),
+  bonzo_borrow_tool: (params) => ({
+    raw: { transactionId: nextDemoTxId(), tokenSymbol: params['tokenSymbol'], amount: params['amount'] },
+    humanMessage: `**Borrowed** ${params['amount']} ${params['tokenSymbol']} from Bonzo at ${params['rateMode']} rate\n- **Transaction**: \`${nextDemoTxId()}\``,
+  }),
+  bonzo_repay_tool: (params) => ({
+    raw: { transactionId: nextDemoTxId(), tokenSymbol: params['tokenSymbol'], amount: params['amount'] },
+    humanMessage: `**Repaid** ${params['amount']} ${params['tokenSymbol']} to Bonzo lending pool\n- **Transaction**: \`${nextDemoTxId()}\``,
+  }),
 }
 
 function getDemoToolResponse(toolName: string, params: Record<string, unknown>): ToolResponse {
@@ -4148,6 +4352,10 @@ const demoChatResponses: Record<string, string[]> = {
   'governance-relay': [
     'Governance systems are **online**. I can help with:\n\n- **Create proposals** — submit to the HCS consensus topic\n- **Schedule transactions** — set up future actions\n- **Coordinate agents** — trigger cross-agent workflows\n\nWould you like to create a proposal or review existing ones?',
     'I manage the **governance layer** for your agent swarm:\n\n- **HCS Topics**: Active, receiving messages\n- **Scheduled Actions**: 3 pending\n- **Agent Coordination**: All links healthy\n\nWhat governance action would you like to take?',
+  ],
+  'bonzo-keeper': [
+    'I\'ve scanned the **Bonzo lending markets** and checked sentiment:\n\n- **Fear & Greed**: 42/100 (Fear)\n- **Best Supply APY**: USDC at 4.8%\n- **HBAR Supply APY**: 3.2%\n\n**Recommendation**: Market is cautious — consider depositing to stablecoins for safer yield. Want me to deposit?',
+    'Your **Bonzo Keeper** is active and monitoring:\n\n- **Sentiment**: Improving (38 → 42)\n- **Current Positions**: None active\n- **Available**: USDC, HBAR, SAUCE pools\n\nTell me your yield goal (e.g., "safe yield on HBAR") and I\'ll handle the rest!',
   ],
 }
 

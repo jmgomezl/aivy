@@ -19,6 +19,7 @@ export type CapabilityGroupId =
   | 'bonzo'
   | 'coincap'
   | 'chainlink'
+  | 'sentiment'
 
 export type AgentTemplate = {
   id: string

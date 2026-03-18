@@ -2,6 +2,7 @@ import treasurySentinelSprite from './assets/agents/treasury-sentinel.svg'
 import yieldRouterSprite from './assets/agents/yield-router.svg'
 import complianceClerkSprite from './assets/agents/compliance-clerk.svg'
 import governanceRelaySprite from './assets/agents/governance-relay.svg'
+import bonzoKeeperSprite from './assets/agents/bonzo-keeper.svg'
 import type {
   AgentTemplate,
   AgentStatus,
@@ -60,6 +61,18 @@ export const templates: AgentTemplate[] = [
     description:
       'Turns governance instructions into observable Hedera automations.',
     guardrail: 'Timelocks and approval thresholds',
+  },
+  {
+    id: 'bonzo-keeper',
+    name: 'Bonzo Keeper',
+    glyph: 'BK',
+    sprite: bonzoKeeperSprite,
+    color: '#2ECC71',
+    room: 'Strategy Pit',
+    mission: 'Manage DeFi yield on Bonzo vaults with sentiment-aware strategies.',
+    description:
+      'Deposits, harvests, and rebalances Bonzo lending positions using market sentiment and price feeds.',
+    guardrail: 'Vault spending caps and sentiment thresholds',
   },
 ]
 
@@ -195,6 +208,36 @@ export const launchWizardByTemplate: Record<string, LaunchWizardConfig> = {
       },
     ],
   },
+  'bonzo-keeper': {
+    title: 'Bonzo Keeper launch',
+    description: 'Deploy a sentiment-aware DeFi keeper for Bonzo lending vaults.',
+    defaults: {
+      agentLabel: 'Bonzo Keeper',
+      vaultCapHbar: 100,
+      policyMode: 'conservative',
+      launchNote: 'Autonomous yield management with sentiment-aware harvesting on Bonzo Finance.',
+    },
+    fields: [
+      { id: 'agentLabel', label: 'Keeper label', input: 'text' },
+      {
+        id: 'policyMode',
+        label: 'Risk profile',
+        input: 'select',
+        options: [
+          { label: 'Conservative (stablecoins)', value: 'conservative' },
+          { label: 'Balanced (blue-chip tokens)', value: 'balanced' },
+          { label: 'Aggressive (volatile pairs)', value: 'aggressive' },
+        ],
+      },
+      { id: 'vaultCapHbar', label: 'Vault cap (HBAR)', input: 'number' },
+      {
+        id: 'launchNote',
+        label: 'Launch note',
+        input: 'textarea',
+        placeholder: 'Strategy focus: e.g. "maximize HBAR yield safely"',
+      },
+    ],
+  },
 }
 
 export const emptyStats: NetworkStats = {
@@ -278,6 +321,13 @@ export const speechBubbles: Record<string, string[]> = {
     'Collecting votes...',
     'Threshold met',
     'Scheduling action...',
+  ],
+  'bonzo-keeper': [
+    'Checking sentiment...',
+    'Scanning Bonzo APY...',
+    'Harvesting rewards...',
+    'Market bearish — swapping',
+    'Yield optimized',
   ],
 }
 
