@@ -15,6 +15,7 @@ const walkConfigs = [
   { walkClass: 'walk-yr', bubble: 'Token minted!' },
   { walkClass: 'walk-cc', bubble: 'Audit logged on-chain' },
   { walkClass: 'walk-gr', bubble: 'Proposal submitted' },
+  { walkClass: 'walk-bk', bubble: 'Sentiment: Bullish' },
 ]
 
 /* Inter-agent data transfers with source/dest room centers
@@ -95,6 +96,7 @@ export default function Landing({ onEnter, onTryDemo, onAbout }: LandingProps) {
             {/* Walking agents */}
             {templates.map((template, index) => {
               const cfg = walkConfigs[index]
+              if (!cfg) return null
               return (
                 <div
                   className={`preview-agent ${cfg.walkClass}`}
