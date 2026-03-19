@@ -114,7 +114,7 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
             <img className="about-logo" src="/logo-192.png" alt="Aivy" />
             <div>
               <h1 className="about-title">Aivy Architecture</h1>
-              <p className="about-sub">On-chain smart contracts powering trustless AI agent operations on Hedera</p>
+              <p className="about-sub">Three-layer defense-in-depth: AWS KMS + on-chain vaults + application security</p>
             </div>
           </header>
 
@@ -192,6 +192,159 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
                 </div>
                 <h4>Audit Trail</h4>
                 <p>Every execution emits on-chain events for full transparency</p>
+              </div>
+            </div>
+          </section>
+
+          {/* ─── AWS KMS ──────────────────────────── */}
+          <section className="about-section about-section--kms">
+            <h2 className="about-section-title about-section-title--kms">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0110 0v4" />
+                <circle cx="12" cy="16" r="1" />
+              </svg>
+              AWS KMS — Envelope Encryption
+              <span className="about-kms-badge">Secure Key Management</span>
+            </h2>
+            <p className="about-desc">
+              Every agent's Hedera signing key is protected by a <strong>dedicated AWS KMS symmetric key</strong>. Private keys are <strong>never stored in plaintext</strong> — encrypted at rest, decrypted in-memory only for signing ({'<'} 50ms), then wiped.
+            </p>
+
+            {/* KMS signing flow */}
+            <div className="about-kms-flow">
+              <div className="about-kms-flow-step">
+                <span className="about-kms-flow-icon">🔐</span>
+                <span className="about-kms-flow-text">Agent needs to sign</span>
+              </div>
+              <span className="about-flow-arrow">&rarr;</span>
+              <div className="about-kms-flow-step">
+                <span className="about-kms-flow-icon">☁️</span>
+                <span className="about-kms-flow-text">KMS Decrypt {'<'} 50ms</span>
+              </div>
+              <span className="about-flow-arrow">&rarr;</span>
+              <div className="about-kms-flow-step">
+                <span className="about-kms-flow-icon">✍️</span>
+                <span className="about-kms-flow-text">Sign Hedera Tx</span>
+              </div>
+              <span className="about-flow-arrow">&rarr;</span>
+              <div className="about-kms-flow-step">
+                <span className="about-kms-flow-icon">🧹</span>
+                <span className="about-kms-flow-text">Wipe key memory</span>
+              </div>
+            </div>
+
+            {/* Key lifecycle diagram */}
+            <div className="about-kms-lifecycle">
+              <h3 className="about-kms-lifecycle-title">Key Lifecycle</h3>
+              <div className="about-kms-lc-row">
+                <span className="about-kms-lc-step about-kms-lc--create">
+                  <span className="about-kms-lc-num">1</span>
+                  Create KMS Key
+                </span>
+                <span className="about-kms-lc-arrow">&rarr;</span>
+                <span className="about-kms-lc-step about-kms-lc--encrypt">
+                  <span className="about-kms-lc-num">2</span>
+                  Encrypt Ed25519
+                </span>
+                <span className="about-kms-lc-arrow">&rarr;</span>
+                <span className="about-kms-lc-step about-kms-lc--sign">
+                  <span className="about-kms-lc-num">3</span>
+                  Sign Transactions
+                </span>
+                <span className="about-kms-lc-arrow">&rarr;</span>
+                <span className="about-kms-lc-step about-kms-lc--rotate">
+                  <span className="about-kms-lc-num">4</span>
+                  Auto-Rotate
+                </span>
+              </div>
+            </div>
+
+            {/* Code snippet */}
+            <div className="about-code-wrap about-code-wrap--kms">
+              <div className="about-code-header">
+                <span className="about-code-dot" />
+                <span className="about-code-dot" />
+                <span className="about-code-dot" />
+                <span className="about-code-filename">server/kms.ts</span>
+                <span className="about-code-badge about-code-badge--kms">AWS KMS</span>
+              </div>
+              <pre className="about-code"><code>{`// Envelope encryption: KMS encrypts the agent's private key
+const { CiphertextBlob } = await kms.send(new EncryptCommand({
+  KeyId: agentKmsKeyId,
+  Plaintext: privateKeyBytes,
+  EncryptionContext: {
+    platform: 'aivy',
+    agent: agentId,
+    keyType: 'ed25519-signing'
+  }
+}));
+// Store only ciphertext — private key NEVER touches disk
+
+// Transaction signing: decrypt in-memory, sign, wipe
+const { Plaintext } = await kms.send(new DecryptCommand({
+  CiphertextBlob: storedCiphertext,
+  EncryptionContext: { platform: 'aivy', agent: agentId, keyType: 'ed25519-signing' }
+}));
+const key = PrivateKey.fromBytesED25519(Plaintext);
+const signed = await transaction.sign(key);
+Buffer.from(Plaintext).fill(0); // Wipe from memory`}</code></pre>
+            </div>
+
+            {/* KMS feature cards */}
+            <div className="about-features">
+              <div className="about-feat about-feat--kms">
+                <div className="about-feat-icon about-feat-icon--kms">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
+                  </svg>
+                </div>
+                <h4>Per-Agent Keys</h4>
+                <p>Each agent gets its own dedicated KMS symmetric key — blast radius = 1 agent</p>
+              </div>
+              <div className="about-feat about-feat--kms">
+                <div className="about-feat-icon about-feat-icon--kms">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                    <path d="M9 12l2 2 4-4" />
+                  </svg>
+                </div>
+                <h4>Encryption Context</h4>
+                <p>Decrypt requires matching <code>{'platform + agent + keyType'}</code> — prevents cross-agent access</p>
+              </div>
+              <div className="about-feat about-feat--kms">
+                <div className="about-feat-icon about-feat-icon--kms">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="16" y1="13" x2="8" y2="13" />
+                    <line x1="16" y1="17" x2="8" y2="17" />
+                  </svg>
+                </div>
+                <h4>CloudTrail Audit</h4>
+                <p>Every KMS operation logged in AWS CloudTrail for full compliance visibility</p>
+              </div>
+            </div>
+
+            {/* Three-layer defense diagram */}
+            <div className="about-kms-defense">
+              <h3 className="about-kms-lifecycle-title">Three-Layer Defense-in-Depth</h3>
+              <div className="about-defense-layers">
+                <div className="about-defense-layer about-defense-layer--kms">
+                  <span className="about-defense-layer-label">Layer 3</span>
+                  <span className="about-defense-layer-name">AWS KMS</span>
+                  <span className="about-defense-layer-desc">Envelope encryption &middot; CloudTrail &middot; Auto-rotation</span>
+                </div>
+                <div className="about-defense-layer about-defense-layer--vault">
+                  <span className="about-defense-layer-label">Layer 2</span>
+                  <span className="about-defense-layer-name">AivyVault.sol</span>
+                  <span className="about-defense-layer-desc">On-chain spending caps &middot; Solidity guardrails</span>
+                </div>
+                <div className="about-defense-layer about-defense-layer--app">
+                  <span className="about-defense-layer-label">Layer 1</span>
+                  <span className="about-defense-layer-name">Application</span>
+                  <span className="about-defense-layer-desc">JWT &middot; AES-256-GCM &middot; Rate limits &middot; RBAC</span>
+                </div>
               </div>
             </div>
           </section>
@@ -308,11 +461,11 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
               Tech Stack
             </h2>
             <div className="about-stack">
+              <span className="about-stack-chip about-stack-chip--kms">AWS KMS</span>
               <span className="about-stack-chip">Hedera Agent Kit</span>
               <span className="about-stack-chip">Solidity ^0.8.24</span>
               <span className="about-stack-chip">OpenAI GPT-4o</span>
               <span className="about-stack-chip">React + Vite</span>
-              <span className="about-stack-chip">Phaser 3</span>
               <span className="about-stack-chip">Express</span>
               <span className="about-stack-chip">SQLite</span>
               <span className="about-stack-chip">HashConnect</span>
