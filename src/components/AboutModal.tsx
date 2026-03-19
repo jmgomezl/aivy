@@ -1,4 +1,12 @@
+import { useRef, useState, useEffect, useCallback } from 'react'
 import './AboutModal.css'
+
+const NAV_ITEMS = [
+  { id: 'vault', label: 'AivyVault', icon: 'shield' },
+  { id: 'kms', label: 'AWS KMS', icon: 'lock' },
+  { id: 'erc8183', label: 'ERC-8183', icon: 'transfer' },
+  { id: 'stack', label: 'Tech Stack', icon: 'bolt' },
+] as const
 
 const VAULT_SOLIDITY = `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
@@ -97,6 +105,36 @@ type AboutModalProps = {
 }
 
 export default function AboutModal({ open, onClose }: AboutModalProps) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [activeNav, setActiveNav] = useState('vault')
+
+  const scrollToSection = useCallback((id: string) => {
+    const el = scrollRef.current?.querySelector(`#about-${id}`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      setActiveNav(id)
+    }
+  }, [])
+
+  // Track which section is in view via IntersectionObserver
+  useEffect(() => {
+    if (!open || !scrollRef.current) return
+    const sections = scrollRef.current.querySelectorAll('[data-nav-section]')
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            const id = (entry.target as HTMLElement).dataset.navSection
+            if (id) setActiveNav(id)
+          }
+        }
+      },
+      { root: scrollRef.current, rootMargin: '-20% 0px -60% 0px', threshold: 0 }
+    )
+    sections.forEach((s) => observer.observe(s))
+    return () => observer.disconnect()
+  }, [open])
+
   if (!open) return null
 
   return (
@@ -108,7 +146,42 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
           </svg>
         </button>
 
-        <div className="about-scroll">
+        {/* Sticky section navigator */}
+        <nav className="about-nav">
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.id}
+              className={`about-nav-item${activeNav === item.id ? ' about-nav-item--active' : ''}${item.id === 'kms' ? ' about-nav-item--kms' : ''}`}
+              onClick={() => scrollToSection(item.id)}
+              type="button"
+            >
+              {item.icon === 'shield' && (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+              )}
+              {item.icon === 'lock' && (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0110 0v4" />
+                </svg>
+              )}
+              {item.icon === 'transfer' && (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
+                </svg>
+              )}
+              {item.icon === 'bolt' && (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                </svg>
+              )}
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="about-scroll" ref={scrollRef}>
           {/* Header */}
           <header className="about-header">
             <img className="about-logo" src="/logo-192.png" alt="Aivy" />
@@ -119,7 +192,7 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
           </header>
 
           {/* ─── AivyVault ─────────────────────────── */}
-          <section className="about-section">
+          <section id="about-vault" data-nav-section="vault" className="about-section">
             <h2 className="about-section-title">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
@@ -197,7 +270,7 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
           </section>
 
           {/* ─── AWS KMS ──────────────────────────── */}
-          <section className="about-section about-section--kms">
+          <section id="about-kms" data-nav-section="kms" className="about-section about-section--kms">
             <h2 className="about-section-title about-section-title--kms">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
@@ -350,7 +423,7 @@ Buffer.from(Plaintext).fill(0); // Wipe from memory`}</code></pre>
           </section>
 
           {/* ─── ERC-8183 ──────────────────────────── */}
-          <section className="about-section">
+          <section id="about-erc8183" data-nav-section="erc8183" className="about-section">
             <h2 className="about-section-title">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
@@ -453,7 +526,7 @@ Buffer.from(Plaintext).fill(0); // Wipe from memory`}</code></pre>
           </section>
 
           {/* ─── Tech Stack ────────────────────────── */}
-          <section className="about-section about-section--compact">
+          <section id="about-stack" data-nav-section="stack" className="about-section about-section--compact">
             <h2 className="about-section-title">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
