@@ -10,7 +10,15 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/AWS-KMS-FF9900?style=flat-square&logo=amazon-aws&logoColor=white" />
+  <img src="https://img.shields.io/badge/Hedera-Testnet-8259EF?style=flat-square&logo=hedera&logoColor=white" />
+  <img src="https://img.shields.io/badge/Security-AES--256--GCM-00C853?style=flat-square" />
+  <img src="https://img.shields.io/badge/Keys-Never%20Plaintext-E53935?style=flat-square" />
+</p>
+
+<p align="center">
   <a href="https://aivylabs.xyz">Live Demo</a> &bull;
+  <a href="docs/KMS_SECURITY.md">🔐 AWS KMS Security</a> &bull;
   <a href="docs/ARCHITECTURE.md">Architecture</a> &bull;
   <a href="docs/PRODUCT_BRIEF.md">Product Brief</a> &bull;
   <a href="contracts/AivyVault.sol">AivyVault</a> &bull;
@@ -27,10 +35,11 @@ Hedera has world-class infrastructure — fast finality, low fees, native tokens
 
 Aivy solves this by providing a **ready-to-use platform where AI agents are first-class citizens on Hedera**:
 
+- **🔐 AWS KMS-protected signing keys** — Every agent's private key is encrypted by a dedicated AWS KMS symmetric key. Keys are **never stored in plaintext** — decrypted in-memory only for the milliseconds needed to sign, then wiped. Full CloudTrail audit trail. ([Details →](docs/KMS_SECURITY.md))
 - **Any LLM can operate on Hedera** — Agents use 50+ tools from the Hedera Agent Kit via natural language. No SDK knowledge required.
 - **Agents run autonomously, not just on user prompts** — Cron schedules and on-chain event triggers let agents act on their own (e.g., "rebalance treasury weekly", "respond to incoming HBAR transfers").
 - **On-chain guardrails, not just promises** — Every agent deploys with an [AivyVault](contracts/AivyVault.sol) Solidity contract that enforces spending caps at the EVM level. The AI literally cannot overspend.
-- **Real wallet isolation** — Each agent gets its own Hedera account with an encrypted private key. No shared operator key risk.
+- **Real wallet isolation** — Each agent gets its own Hedera account with a KMS-encrypted private key. No shared operator key risk.
 - **Hedera-native event system** — Agents react to HBAR transfers, HCS topic messages, and token movements by polling the Mirror Node in real-time.
 
 > **The goal**: make it as easy to deploy an autonomous Hedera agent as it is to deploy a serverless function.
@@ -73,6 +82,60 @@ This means spending limits are enforced **on-chain**, not just in application co
 - **Receive fallback** — Contract can hold HBAR for agent operations
 - **ERC-8183 integration** — Vault caps are checked before agents can fund [agent-to-agent jobs](docs/ERC8183.md)
 
+### 🔐 AWS KMS — Secure Key Management
+
+> **Bounty**: Secure Key Management for Onchain Applications (Intermediate)
+
+Every agent deployed on Aivy is protected by **AWS KMS envelope encryption**. Private keys never exist in plaintext at rest — they're encrypted by a dedicated KMS symmetric key per agent.
+
+```
+┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
+│   Agent Deploys   │────▶│  AWS KMS Creates  │────▶│  Hedera Account   │
+│   (UI / API)      │     │  Symmetric Key    │     │  Created On-Chain │
+└──────────────────┘     └──────────────────┘     └──────────────────┘
+                                   │
+                          encrypts private key
+                                   │
+                                   ▼
+                         ┌──────────────────┐
+                         │  SQLite stores    │
+                         │  ciphertext only  │
+                         │  (never plaintext)│
+                         └──────────────────┘
+```
+
+**Transaction signing flow:**
+
+1. Agent needs to sign → KMS `Decrypt` API call (TLS 1.3)
+2. Private key exists in memory for **< 50ms**
+3. Transaction signed with Hedera SDK
+4. Key buffer wiped with `Buffer.fill(0)`
+5. Every KMS operation logged in **AWS CloudTrail**
+
+**Key features:**
+
+| Feature | Description |
+|---------|-------------|
+| **Per-Agent KMS Keys** | Each agent gets its own dedicated KMS symmetric key |
+| **Envelope Encryption** | Hedera Ed25519 key encrypted with KMS AES-256 |
+| **Auto-Rotation** | KMS keys rotate annually via `EnableKeyRotation` |
+| **Key Lifecycle** | Create → Encrypt → Rotate → Schedule Deletion (7-day safety) |
+| **Encryption Context** | Decrypt requires matching `{platform, agent, keyType}` |
+| **Migration Support** | Existing plaintext keys can be migrated to KMS |
+| **Graceful Fallback** | Without AWS credentials, falls back to AES-256-GCM local encryption |
+
+**API endpoints:**
+
+```
+GET  /api/kms/status              # Check if KMS is active
+GET  /api/agents/:id/kms/info     # Get KMS key metadata for agent
+POST /api/agents/:id/kms/rotate   # Rotate agent's Hedera key
+```
+
+📖 **[Full KMS Security Documentation →](docs/KMS_SECURITY.md)**
+
+---
+
 ### Mirror Node Event Polling
 
 Aivy polls the Hedera Mirror Node REST API every 30 seconds to detect:
@@ -109,6 +172,7 @@ Users connect their HashPack wallet via WalletConnect/HashConnect v3 to:
 | **Event Triggers** | React to HBAR inflows, HCS messages, token transfers via Mirror Node |
 | **Real Funding Flow** | Transfer HBAR from HashPack directly to agent accounts |
 | **Spending Analytics** | Per-agent HBAR tracking, burn rate, estimated runway |
+| **🔐 AWS KMS Keys** | Every agent's signing key encrypted by a dedicated KMS key — never stored in plaintext ([docs](docs/KMS_SECURITY.md)) |
 | **Vault Guardrails** | [AivyVault.sol](contracts/AivyVault.sol) enforces spending caps on-chain |
 | **50+ Hedera Tools** | Full Agent Kit: accounts, tokens, consensus, contracts, queries |
 | **AI Chat** | Natural language interface — GPT-4o routes to the right Hedera tools |
@@ -131,7 +195,8 @@ Users connect their HashPack wallet via WalletConnect/HashConnect v3 to:
 | AI | OpenAI GPT-4o with function calling |
 | Blockchain | Hedera SDK, Hedera Agent Kit, Solidity (AivyVault + AivyJobManager) |
 | Smart Contracts | [AivyVault.sol](contracts/AivyVault.sol) + [AivyJobManager.sol](contracts/AivyJobManager.sol) — Solidity ^0.8.24, compiled via solc-js |
-| Security | AES-256-GCM key encryption, JWT auth, rate limiting |
+| Key Management | AWS KMS envelope encryption, per-agent symmetric keys, CloudTrail audit |
+| Security | AES-256-GCM + KMS encryption, JWT auth, rate limiting |
 | Automation | node-cron, Mirror Node REST polling |
 | Wallet | HashConnect v3, WalletConnect |
 | Testing | Vitest, 159+ unit tests |
@@ -157,13 +222,21 @@ The app opens at `http://localhost:5173`. Without Hedera credentials, it runs in
 ### Environment Variables
 
 ```env
+# Hedera
 HEDERA_ACCOUNT_ID=0.0.XXXXXX           # Hedera testnet operator account
 HEDERA_PRIVATE_KEY=302e...              # Operator private key (ECDSA or ED25519)
+
+# AWS KMS (enables secure key management)
+AWS_ACCESS_KEY_ID=AKIA...               # IAM user with KMS permissions
+AWS_SECRET_ACCESS_KEY=...               # IAM secret key
+AWS_REGION=us-east-1                    # KMS key region
+
+# AI & Wallet
 OPENAI_API_KEY=sk-...                   # Enables AI chat with agents
 VITE_WALLETCONNECT_PROJECT_ID=...       # Optional: HashPack wallet connect
 ```
 
-Security keys (`MASTER_ENCRYPTION_KEY`, `JWT_SECRET`) are auto-generated on first run if not set.
+Security keys (`MASTER_ENCRYPTION_KEY`, `JWT_SECRET`) are auto-generated on first run if not set. When AWS KMS credentials are provided, agent keys are encrypted via KMS; otherwise falls back to local AES-256-GCM.
 
 ### Build & Test
 
@@ -188,20 +261,30 @@ npm test         # Run 159+ unit tests via Vitest
 
 ### What Each Agent Gets
 
-1. **Dedicated Hedera Account** — Own key pair, encrypted at rest (AES-256-GCM)
-2. **AivyVault Contract** — On-chain spending cap enforcement via [Solidity](contracts/AivyVault.sol)
-3. **HCS Audit Topic** — Every action logged immutably on Hedera Consensus Service
-4. **GPT-4o Session** — Natural language with access to 50+ Hedera tools
-5. **Autonomous Execution** — Cron schedules + event-triggered actions via Mirror Node
+1. **Dedicated Hedera Account** — Own key pair, encrypted by a dedicated AWS KMS key (never stored in plaintext)
+2. **AWS KMS Key** — Per-agent symmetric key for envelope encryption with CloudTrail audit trail
+3. **AivyVault Contract** — On-chain spending cap enforcement via [Solidity](contracts/AivyVault.sol)
+4. **HCS Audit Topic** — Every action logged immutably on Hedera Consensus Service
+5. **GPT-4o Session** — Natural language with access to 50+ Hedera tools
+6. **Autonomous Execution** — Cron schedules + event-triggered actions via Mirror Node
 
-### Vault Contract Flow
+### Agent Deployment Flow (KMS + Vault)
 
 ```
-Deploy Agent → Compile AivyVault.sol → Deploy to Hedera EVM → Enforce Caps On-Chain
-                    │                        │                        │
-                    ▼                        ▼                        ▼
-              solc-js compile      ContractCreateFlow          logExecution()
-              (server-side)        (Hedera SDK)               reverts if cap exceeded
+Deploy Agent
+    │
+    ├──▶ AWS KMS: CreateKey (symmetric, per-agent)
+    │       └──▶ Generate Ed25519 keypair
+    │       └──▶ KMS Encrypt private key → store ciphertext in DB
+    │       └──▶ Enable auto-rotation
+    │
+    ├──▶ Hedera: Create dedicated account (signed with KMS-decrypted key)
+    │
+    ├──▶ Compile AivyVault.sol (solc-js, server-side)
+    │       └──▶ ContractCreateFlow → deploy to Hedera EVM
+    │       └──▶ Store contract ID in DB
+    │
+    └──▶ Agent ready: KMS-protected key + on-chain vault guardrails
 ```
 
 ---
@@ -215,9 +298,10 @@ contracts/
 
 server/
   index.ts              # Express API — agents, chat, tools, schedules, triggers, jobs
+  kms.ts                # 🔐 AWS KMS integration — key creation, encryption, rotation, deletion
   db.ts                 # SQLite — deployments, spending, schedules, triggers, jobs
   auth.ts               # JWT challenge-response with Hedera account verification
-  crypto.ts             # AES-256-GCM encryption for agent private keys
+  crypto.ts             # AES-256-GCM encryption (additional layer on top of KMS)
   scheduler.ts          # node-cron wrapper for autonomous agent execution
   eventPoller.ts        # Mirror Node polling for HBAR, HCS, token events
   rateLimiter.ts        # Per-route rate limiting

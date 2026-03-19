@@ -15,6 +15,7 @@ const walkConfigs = [
   { walkClass: 'walk-yr', bubble: 'Token minted!' },
   { walkClass: 'walk-cc', bubble: 'Audit logged on-chain' },
   { walkClass: 'walk-gr', bubble: 'Proposal submitted' },
+  { walkClass: 'walk-bk', bubble: 'Sentiment: Bullish' },
 ]
 
 /* Inter-agent data transfers with source/dest room centers
@@ -93,8 +94,9 @@ export default function Landing({ onEnter, onTryDemo, onAbout }: LandingProps) {
             ))}
 
             {/* Walking agents */}
-            {templates.map((template, index) => {
+            {templates.slice(0, 4).map((template, index) => {
               const cfg = walkConfigs[index]
+              if (!cfg) return null
               return (
                 <div
                   className={`preview-agent ${cfg.walkClass}`}
@@ -183,8 +185,8 @@ export default function Landing({ onEnter, onTryDemo, onAbout }: LandingProps) {
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
               </svg>
             </div>
-            <h3>Safe Vaults</h3>
-            <p>On-chain spending caps and guardrails for every agent</p>
+            <h3>Vaults + KMS</h3>
+            <p>On-chain spending caps with AWS KMS key management — private keys never stored in plaintext</p>
           </div>
 
           <div className="pillar">

@@ -24,6 +24,8 @@ const welcomeMessages: Record<string, string> = {
     "Hello. I'm the Compliance Clerk. I can audit transactions, inspect accounts, and verify token activity.",
   'governance-relay':
     "Welcome! I'm the Governance Relay. I manage HCS topics, coordinate proposals, and handle scheduled actions.",
+  'bonzo-keeper':
+    "Hey! I'm your Bonzo Keeper. I manage your DeFi yield on Bonzo Finance — deposits, harvesting, and sentiment-aware rebalancing. Tell me your yield goal!",
 }
 
 const suggestedPrompts: Record<string, string[]> = {
@@ -54,6 +56,12 @@ const suggestedPrompts: Record<string, string[]> = {
     'Show topic messages',
     'Schedule transfer',
   ],
+  'bonzo-keeper': [
+    'Show Bonzo market rates',
+    'Deposit 10 HBAR into Bonzo',
+    'Check crypto sentiment',
+    'Withdraw from Bonzo',
+  ],
 }
 
 const placeholderHints: Record<string, string> = {
@@ -61,6 +69,7 @@ const placeholderHints: Record<string, string> = {
   'yield-router': 'Create tokens, mint NFTs...',
   'compliance-clerk': 'Audit accounts, verify tokens...',
   'governance-relay': 'Create topics, submit proposals...',
+  'bonzo-keeper': 'Deposit, harvest, check sentiment...',
 }
 
 export default function ChatPanel({ agent, userAccountId, onAgentReply, onRefresh, onMarkActive }: ChatPanelProps) {

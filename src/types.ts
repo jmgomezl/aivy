@@ -19,6 +19,7 @@ export type CapabilityGroupId =
   | 'bonzo'
   | 'coincap'
   | 'chainlink'
+  | 'sentiment'
 
 export type AgentTemplate = {
   id: string
@@ -66,6 +67,7 @@ export type ServerDeployment = {
   vaultCapHbar: number
   agentAccountId: string | null
   walletType: 'platform' | 'dedicated'
+  kmsKeyId: string | null
 }
 
 export type ToolCatalogGroup = {

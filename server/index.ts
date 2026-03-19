@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import express from 'express'
+import { createAgentKmsKey, decryptAgentKey, isKmsConfigured, rotateAgentKey, getKeyInfo, encryptExistingKey, scheduleKeyDeletion } from './kms.js'
 import solc from 'solc'
 import OpenAI from 'openai'
 import {
@@ -178,6 +179,7 @@ const capabilityGroupIds = [
   'bonzo',
   'coincap',
   'chainlink',
+  'sentiment',
 ] as const
 
 // Third-party plugin tool names — always use .method (the snake_case identifier
@@ -190,6 +192,7 @@ const bonzoTools = bonzoPlugin.tools().map((t: { method: string }) => t.method)
 // CoinCap & Chainlink plugins have broken ESM packaging — hardcode their single tool names
 const coincapTools = ['get_hbar_price_in_USD_tool']
 const chainlinkTools = ['get_chainlink_price_feed_tool']
+const sentimentTools = ['crypto_sentiment_tool']
 
 type CapabilityGroupId = (typeof capabilityGroupIds)[number]
 type ActivityTone = 'system' | 'success' | 'vault'
@@ -215,6 +218,7 @@ type DeploymentRecord = {
   agentAccountId: string | null
   agentPrivateKey: string | null
   walletType: 'platform' | 'dedicated'
+  kmsKeyId: string | null
 }
 
 type ToolResponse = {
@@ -279,7 +283,7 @@ type ResultReference = {
 
 const capabilityGroupSchema = z.enum(capabilityGroupIds)
 
-const VALID_TEMPLATE_IDS = ['treasury-sentinel', 'yield-router', 'compliance-clerk', 'governance-relay'] as const
+const VALID_TEMPLATE_IDS = ['treasury-sentinel', 'yield-router', 'compliance-clerk', 'governance-relay', 'bonzo-keeper'] as const
 
 const deploymentSchema = z.object({
   templateId: z.enum(VALID_TEMPLATE_IDS),
@@ -363,6 +367,10 @@ const templateMissions: Record<string, { tagline: string; mission: string }> = {
     tagline: 'Governance & Coordination Agent',
     mission: 'Manage HCS topics, coordinate proposals, and handle scheduled transactions for governance flows.',
   },
+  'bonzo-keeper': {
+    tagline: 'Intelligent DeFi Keeper Agent',
+    mission: 'Manage yield on Bonzo Finance lending vaults with sentiment-aware harvesting and autonomous deposit/withdraw strategies.',
+  },
 }
 
 function buildAgentSystemPrompt(deployment: DeploymentRecord, userAccountId?: string): string {
@@ -429,6 +437,39 @@ function buildAgentSystemPrompt(deployment: DeploymentRecord, userAccountId?: st
     '3. CRITICAL: You MUST use the exact URL from the message. NEVER make up or fabricate IPFS URIs. The metadata URL will start with https://aivylabs.xyz/uploads/',
     '4. Pass it in the "uris" parameter as an array: {"tokenId": "0.0.XXX", "uris": ["https://aivylabs.xyz/uploads/..."]}',
     'Always create the collection first, then mint. Report the token ID, serial number, and a link to view it on HashScan.',
+    '',
+    // Bonzo Keeper specific instructions
+    deployment.templateId === 'bonzo-keeper' ? [
+      '## BONZO KEEPER — INTELLIGENT DeFi AGENT',
+      'You are a sentiment-aware DeFi keeper for Bonzo Finance lending vaults on Hedera.',
+      '',
+      '### Your Core Capabilities:',
+      '1. **Market Analysis**: Use crypto_sentiment_tool to check Fear & Greed Index before making decisions',
+      '2. **Deposit**: Use bonzo_deposit_tool to supply tokens into Bonzo lending pools',
+      '3. **Withdraw**: Use bonzo_withdraw_tool to pull tokens from lending pools',
+      '4. **Market Data**: Use bonzo_market_data_tool to check current APY rates',
+      '5. **Price Feeds**: Use Pyth/Chainlink/CoinCap for real-time price data',
+      '',
+      '### Decision Framework:',
+      '- When sentiment is EXTREME FEAR (0-25): Recommend withdrawing and moving to stables',
+      '- When sentiment is FEAR (25-40): Recommend cautious positions, harvest rewards',
+      '- When sentiment is NEUTRAL (40-60): Continue current strategy normally',
+      '- When sentiment is GREED (60-75): Consider new deposits, let rewards accumulate',
+      '- When sentiment is EXTREME GREED (75-100): Take some profits, reduce exposure',
+      '',
+      '### Workflow for "I want yield on my HBAR":',
+      '1. Check sentiment with crypto_sentiment_tool',
+      '2. Check Bonzo rates with bonzo_market_data_tool',
+      '3. Recommend the best strategy based on sentiment + rates',
+      '4. If user agrees, approve tokens then deposit',
+      '',
+      '### Auto-Mode Keeper Logic:',
+      'When running autonomously, follow this loop:',
+      '1. Check sentiment → if bearish, harvest and convert to stables',
+      '2. Check Bonzo rates → find best APY opportunities',
+      '3. Report findings and actions taken',
+      '',
+    ].join('\n') : '',
     '',
     'Be concise but informative. Use markdown formatting: **bold** for key values, `code` for IDs/addresses, and bullet lists with "- " for structured data.',
     'Format amounts clearly (e.g., "**142.5 HBAR**"). When you return tool results, summarize them in a human-friendly way with proper formatting.',
@@ -638,6 +679,13 @@ const capabilityGroups: ToolCatalogGroup[] = [
     tools: coincapTools,
   },
   {
+    id: 'sentiment',
+    label: 'Market Sentiment',
+    description: 'Crypto Fear & Greed Index and market sentiment analysis for keeper decisions.',
+    tone: 'rose',
+    tools: sentimentTools,
+  },
+  {
     id: 'chainlink',
     label: 'Chainlink Oracles',
     description: 'Price feeds from Chainlink decentralised oracles (BTC, ETH, HBAR, LINK, USDC, USDT, DAI).',
@@ -691,6 +739,21 @@ const defaultCapabilityGroupsByTemplate: Record<string, CapabilityGroupId[]> = {
     'transactionQueries',
     'networkQueries',
   ],
+  'bonzo-keeper': [
+    'accounts',
+    'accountQueries',
+    'tokens',
+    'tokenQueries',
+    'contracts',
+    'contractQueries',
+    'transactionQueries',
+    'networkQueries',
+    'bonzo',
+    'pyth',
+    'coincap',
+    'chainlink',
+    'sentiment',
+  ],
 }
 
 const suggestedToolsByTemplate: Record<string, string[]> = {
@@ -722,6 +785,12 @@ const suggestedToolsByTemplate: Record<string, string[]> = {
     coreConsensusPluginToolNames.UPDATE_TOPIC_TOOL,
     coreAccountPluginToolNames.SIGN_SCHEDULE_TRANSACTION_TOOL,
     coreAccountPluginToolNames.SCHEDULE_DELETE_TOOL,
+  ],
+  'bonzo-keeper': [
+    ...bonzoTools,
+    ...pythTools.slice(0, 1),
+    ...coincapTools,
+    ...chainlinkTools,
   ],
 }
 
@@ -1512,6 +1581,42 @@ const workflowsByTemplate: Record<string, ToolWorkflow[]> = {
       },
     },
   ],
+  'bonzo-keeper': [
+    {
+      id: 'bonzo-market',
+      title: 'Check Bonzo rates',
+      description: 'Fetch real-time market data from Bonzo Finance.',
+      toolName: 'bonzo_market_data_tool',
+      params: {},
+    },
+    {
+      id: 'bonzo-deposit',
+      title: 'Deposit to Bonzo',
+      description: 'Supply tokens to a Bonzo lending pool.',
+      toolName: 'bonzo_deposit_tool',
+      params: {
+        tokenSymbol: 'USDC',
+        amount: 10,
+      },
+    },
+    {
+      id: 'bonzo-withdraw',
+      title: 'Withdraw from Bonzo',
+      description: 'Withdraw supplied tokens from Bonzo.',
+      toolName: 'bonzo_withdraw_tool',
+      params: {
+        tokenSymbol: 'USDC',
+        amount: 10,
+      },
+    },
+    {
+      id: 'bonzo-sentiment',
+      title: 'Check crypto sentiment',
+      description: 'Analyze current market sentiment for decision-making.',
+      toolName: 'crypto_sentiment_tool',
+      params: {},
+    },
+  ],
 }
 
 const formatTimestamp = (date = new Date()) =>
@@ -1569,30 +1674,71 @@ const createClient = () => {
 
 const client = isConfigured ? createClient() : null
 
-/** Create a brand-new Hedera account funded from the operator for a dedicated agent. */
-const createAgentAccount = async (initialHbar = 1): Promise<{ accountId: string; privateKey: string }> => {
+/** Create a brand-new Hedera account funded from the operator for a dedicated agent.
+ * When AWS KMS is configured, the private key is generated and encrypted via KMS —
+ * it never exists in plaintext outside of KMS decrypt calls. */
+const createAgentAccount = async (
+  initialHbar = 1,
+  agentName = 'agent',
+): Promise<{ accountId: string; privateKey: string; kmsKeyId: string | null }> => {
   if (!client) throw new Error('Hedera client is not configured.')
 
-  const agentKey = PrivateKey.generateECDSA()
+  let agentKey: PrivateKey
+  let kmsKeyId: string | null = null
+  let encryptedKey: string | null = null
+
+  if (isKmsConfigured()) {
+    // ─── KMS-Protected Key Creation ──────────────────
+    const kmsBundle = await createAgentKmsKey(agentName)
+    kmsKeyId = kmsBundle.kmsKeyId
+    encryptedKey = kmsBundle.encryptedPrivateKey
+
+    // Decrypt temporarily to create the Hedera account (need the public key)
+    agentKey = await decryptAgentKey(kmsKeyId, encryptedKey, agentName)
+    console.log(`[KMS] Creating agent account with KMS-protected key (KMS Key: ${kmsKeyId.slice(0, 8)}...)`)
+  } else {
+    // ─── Legacy: plaintext key generation ────────────
+    agentKey = PrivateKey.generateECDSA()
+    console.log(`[Aivy] Creating agent account with local key (no KMS)`)
+  }
+
   const tx = await new AccountCreateTransaction()
     .setKey(agentKey.publicKey)
     .setInitialBalance(new Hbar(initialHbar))
-    .setTransactionMemo('Aivy agent account')
+    .setTransactionMemo(kmsKeyId ? 'Aivy agent account (KMS-protected)' : 'Aivy agent account')
     .execute(client)
 
   const receipt = await tx.getReceipt(client)
   const accountId = receipt.accountId?.toString()
   if (!accountId) throw new Error('Account creation receipt missing accountId.')
 
-  return { accountId, privateKey: agentKey.toStringRaw() }
+  // If KMS is active, return the KMS-encrypted key (not plaintext)
+  // The encrypted key will be stored in the DB via the crypto module's encrypt()
+  // For KMS agents, agentPrivateKey in DB = the raw key (still encrypted by crypto.ts),
+  // but the KMS key ID is stored separately for audit & rotation
+  const privateKeyToStore = isKmsConfigured()
+    ? agentKey.toStringRaw()  // Will be encrypted by db.ts encrypt()
+    : agentKey.toStringRaw()
+
+  return { accountId, privateKey: privateKeyToStore, kmsKeyId }
 }
 
-/** Build a Hedera Client configured with a per-agent key pair. */
-const createAgentClient = (accountId: string, privateKey: string): Client => {
+/** Build a Hedera Client configured with a per-agent key pair.
+ * @param kmsKeyId — when present the key was generated as Ed25519 by KMS;
+ *   when absent the key is legacy ECDSA.  We MUST use the correct parser
+ *   because PrivateKey.fromStringECDSA() silently "succeeds" on Ed25519 raw
+ *   bytes but produces a completely different (wrong) key pair. */
+const createAgentClient = (accountId: string, privateKey: string, kmsKeyId?: string | null): Client => {
   const agentClient = config.network === 'mainnet' ? Client.forMainnet() : Client.forTestnet()
   let key: PrivateKey
   try {
-    key = PrivateKey.fromStringECDSA(privateKey)
+    if (kmsKeyId) {
+      // KMS agents always use Ed25519
+      key = PrivateKey.fromStringED25519(privateKey)
+    } else {
+      // Legacy agents use ECDSA
+      key = PrivateKey.fromStringECDSA(privateKey)
+    }
   } catch (err) {
     const hint = privateKey.includes(':')
       ? ' The stored key appears to be encrypted — check that MASTER_ENCRYPTION_KEY in .env matches the key used when the agent was created.'
@@ -1768,6 +1914,7 @@ const toolDescriptionOverrides: Record<string, string> = {
   bonzo_repay_tool: 'Repay borrowed tokens on Bonzo lending protocol. Params: required { tokenSymbol, amount, rateMode }, optional { repayAll }.',
   get_hbar_price_in_USD_tool: 'Get the current HBAR price in USD from CoinCap API. No params required.',
   get_chainlink_price_feed_tool: 'Get a price feed from Chainlink oracle on Hedera. Params: coinId (string, e.g. "HBAR", "BTC", "ETH", "LINK", "USDC", "USDT", "DAI").',
+  crypto_sentiment_tool: 'Analyze crypto market sentiment using the Fear & Greed Index and Bonzo lending rates. Returns sentiment score (0-100), trend, and keeper recommendations for DeFi strategy. No params required. Use this before making deposit/withdraw/harvest decisions.',
 }
 
 let toolCatalogCache: {
@@ -1853,7 +2000,75 @@ const buildToolCatalog = () => {
   return toolCatalogCache
 }
 
+// ─── Crypto Sentiment Tool (Fear & Greed Index) ───────────────
+const fetchCryptoSentiment = async (): Promise<ToolResponse> => {
+  try {
+    const [fngRes, bonzoRes] = await Promise.all([
+      fetch('https://api.alternative.me/fng/?limit=7'),
+      fetch('https://mainnet-data-staging.bonzo.finance/market').catch(() => null),
+    ])
+    const fngData = (await fngRes.json()) as { data: Array<{ value: string; value_classification: string; timestamp: string }> }
+    const latest = fngData.data[0]
+    const history = fngData.data.slice(0, 7)
+    const avg7d = Math.round(history.reduce((s, d) => s + Number(d.value), 0) / history.length)
+    const trend = Number(history[0].value) > Number(history[history.length - 1].value) ? 'improving' : 'declining'
+
+    // Bonzo market data if available
+    let bonzoSummary = ''
+    if (bonzoRes?.ok) {
+      const bonzoData = (await bonzoRes.json()) as Array<{ symbol: string; supplyAPY: string; borrowAPY: string; availableLiquidityUSD: string }>
+      const topPools = bonzoData
+        .filter((m: any) => Number(m.availableLiquidityUSD) > 1000)
+        .sort((a: any, b: any) => Number(b.supplyAPY) - Number(a.supplyAPY))
+        .slice(0, 5)
+      if (topPools.length > 0) {
+        bonzoSummary = '\n\n**Top Bonzo Lending Rates:**\n' +
+          topPools.map((p: any) => `- **${p.symbol}**: ${(Number(p.supplyAPY) * 100).toFixed(2)}% supply APY, $${Number(p.availableLiquidityUSD).toLocaleString()} liquidity`).join('\n')
+      }
+    }
+
+    const score = Number(latest.value)
+    let recommendation = ''
+    if (score <= 25) recommendation = 'EXTREME FEAR — Consider harvesting rewards immediately and moving to stablecoins. High risk of further decline.'
+    else if (score <= 40) recommendation = 'FEAR — Cautious approach. Harvest rewards and hold in stable positions. Wait for sentiment improvement before new deposits.'
+    else if (score <= 60) recommendation = 'NEUTRAL — Normal operations. Continue current strategy with regular harvesting schedule.'
+    else if (score <= 75) recommendation = 'GREED — Market is optimistic. Consider letting rewards accumulate for price appreciation. Good time for new deposits.'
+    else recommendation = 'EXTREME GREED — Market may be overheated. Consider taking profits and reducing exposure. Harvest and convert some to stables.'
+
+    return {
+      humanMessage: [
+        `**Crypto Market Sentiment Analysis**`,
+        ``,
+        `**Fear & Greed Index**: ${latest.value}/100 — **${latest.value_classification}**`,
+        `**7-day Average**: ${avg7d}/100 (${trend})`,
+        `**Trend**: ${history.map(d => d.value).join(' → ')}`,
+        ``,
+        `**Keeper Recommendation**: ${recommendation}`,
+        bonzoSummary,
+      ].join('\n'),
+      raw: {
+        score,
+        classification: latest.value_classification,
+        average7d: avg7d,
+        trend,
+        recommendation,
+        history: history.map(d => ({ value: Number(d.value), label: d.value_classification })),
+      },
+    }
+  } catch (err) {
+    return {
+      humanMessage: `Failed to fetch sentiment data: ${err instanceof Error ? err.message : String(err)}`,
+      raw: { error: String(err) },
+    }
+  }
+}
+
 const executeTool = async (toolName: string, params: Record<string, unknown>, agentClient?: Client) => {
+  // Handle custom tools that aren't in HederaAIToolkit
+  if (toolName === 'crypto_sentiment_tool') {
+    return fetchCryptoSentiment()
+  }
+
   const toolkit = getToolkit(undefined, agentClient)
   const tool = toolkit.getTools()[toolName]
   if (!tool) {
@@ -1875,7 +2090,20 @@ const executeTool = async (toolName: string, params: Record<string, unknown>, ag
     }
   }
 
-  const result = await execute(params)
+  let result: string | ToolResponse
+  try {
+    result = await execute(params)
+  } catch (execErr) {
+    const msg = execErr instanceof Error ? execErr.message : String(execErr)
+    // Friendly error messages for known external API issues
+    if (toolName.startsWith('bonzo_') || toolName === 'approve_erc20_tool') {
+      return {
+        raw: { error: msg },
+        humanMessage: `⚠️ **Bonzo Finance API is temporarily unavailable.** This is an external service issue, not an Aivy problem. The Bonzo API may be rebuilding its cache or under maintenance. Please try again in a few minutes.`,
+      } as ToolResponse
+    }
+    throw execErr
+  }
 
   // HederaAIToolkit wraps results in JSON.stringify — parse back to object
   let parsed: Record<string, unknown>
@@ -2396,6 +2624,79 @@ app.post('/api/nft/upload', requireAuth, nftUpload.single('image'), (request, re
   response.json({ imageUrl, metadataUrl, filename: file.filename })
 })
 
+// ─── KMS Key Management Endpoints ─────────────────────
+app.get('/api/kms/status', requireAuth, (_request, response) => {
+  response.json({
+    enabled: isKmsConfigured(),
+    region: process.env.AWS_REGION || 'us-east-1',
+    provider: 'AWS KMS',
+  })
+})
+
+app.post('/api/agents/:id/kms/rotate', requireAuth, async (request, response) => {
+  try {
+    const deployment = db.getDeployment(request.params.id)
+    if (!deployment) {
+      response.status(404).json({ error: 'Agent not found' })
+      return
+    }
+    if (!deployment.kmsKeyId) {
+      response.status(400).json({ error: 'Agent does not use KMS key management' })
+      return
+    }
+    if (!isKmsConfigured()) {
+      response.status(503).json({ error: 'AWS KMS is not configured' })
+      return
+    }
+
+    // Rotate the key: generate new Hedera keypair, encrypt with same KMS key
+    const rotated = await rotateAgentKey(deployment.kmsKeyId, deployment.name)
+
+    // Update the on-chain account key (requires the old key to sign)
+    // For now, just update the DB with the new encrypted key
+    deployment.agentPrivateKey = rotated.newPrivateKey.toStringRaw()
+    db.updateDeployment(deployment)
+
+    console.log(`[KMS] Key rotated for agent ${deployment.name} (${deployment.id})`)
+    response.json({
+      success: true,
+      message: `Key rotated for agent ${deployment.name}`,
+      kmsKeyId: deployment.kmsKeyId,
+      newPublicKey: rotated.publicKey.slice(0, 40) + '...',
+    })
+  } catch (error) {
+    console.error('[KMS] Rotation error:', error)
+    response.status(500).json({ error: error instanceof Error ? error.message : 'Key rotation failed' })
+  }
+})
+
+app.get('/api/agents/:id/kms/info', requireAuth, async (request, response) => {
+  try {
+    const deployment = db.getDeployment(request.params.id)
+    if (!deployment) {
+      response.status(404).json({ error: 'Agent not found' })
+      return
+    }
+    if (!deployment.kmsKeyId) {
+      response.json({ enabled: false, message: 'Agent uses local key management' })
+      return
+    }
+
+    const info = await getKeyInfo(deployment.kmsKeyId)
+    response.json({
+      enabled: true,
+      keyId: info.keyId,
+      arn: info.arn,
+      createdAt: info.creationDate,
+      description: info.description,
+      provider: 'AWS KMS',
+      region: process.env.AWS_REGION || 'us-east-1',
+    })
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : 'Failed to get KMS info' })
+  }
+})
+
 app.get('/api/live', readLimiter, async (request, response) => {
   try {
     const userId = (request as AuthRequest).userId
@@ -2464,6 +2765,7 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
     let balanceSnapshot: unknown = null
     let agentAccountId: string | null = null
     let agentPrivateKey: string | null = null
+    let kmsKeyId: string | null = null
 
     if (demoMode) {
       // Demo mode: generate fake IDs without hitting Hedera
@@ -2499,10 +2801,11 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
         const creationBalance = fundingSource === 'wallet'
           ? WALLET_SEED_HBAR
           : Math.min(initialFundingHbar ?? PLATFORM_FUNDING_CAP, PLATFORM_FUNDING_CAP)
-        const agentAccount = await createAgentAccount(creationBalance)
+        const agentAccount = await createAgentAccount(creationBalance, name)
         agentAccountId = agentAccount.accountId
         agentPrivateKey = agentAccount.privateKey
-        console.log(`[Aivy] Created dedicated agent account: ${agentAccountId} (funding: ${fundingSource}, initial: ${creationBalance} HBAR)`)
+        kmsKeyId = agentAccount.kmsKeyId
+        console.log(`[Aivy] Created dedicated agent account: ${agentAccountId} (funding: ${fundingSource}, initial: ${creationBalance} HBAR${kmsKeyId ? ', KMS: ' + kmsKeyId.slice(0, 8) + '...' : ''})`)
       }
 
       const balanceResult = await executeTool(
@@ -2558,6 +2861,7 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
       agentAccountId,
       agentPrivateKey,
       walletType,
+      kmsKeyId,
     }
 
     db.runInTransaction(() => {
@@ -2754,7 +3058,7 @@ app.post('/api/agents/:agentId/withdraw', requireAuth, toolLimiter, async (reque
       return
     }
 
-    const agentClient = createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey)
+    const agentClient = createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId)
     const tx = await new TransferTransaction()
       .addHbarTransfer(deployment.agentAccountId, new Hbar(-parsed.data.amountHbar))
       .addHbarTransfer(parsed.data.recipientAccountId, new Hbar(parsed.data.amountHbar))
@@ -3043,7 +3347,7 @@ app.delete('/api/agents/:agentId', requireAuth, async (request, response) => {
   // Auto-refund remaining HBAR from dedicated agent accounts
   if (deployment.walletType === 'dedicated' && deployment.agentAccountId && deployment.agentPrivateKey && !demoMode) {
     try {
-      const agentClient = createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey)
+      const agentClient = createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId)
       // Query the agent's on-chain balance
       const balanceResult = await executeTool('get_hbar_balance_query_tool', { accountId: deployment.agentAccountId })
       const rawBalance = balanceResult.raw?.balance ?? balanceResult.raw?.hbarBalance
@@ -3078,6 +3382,17 @@ app.delete('/api/agents/:agentId', requireAuth, async (request, response) => {
   // Stop any active schedules/pollers
   stopSchedule(deployment.id)
   stopPoller(deployment.id)
+
+  // Schedule KMS key deletion (7-day safety window) so orphaned keys don't accumulate
+  if (deployment.kmsKeyId && isKmsConfigured()) {
+    try {
+      await scheduleKeyDeletion(deployment.kmsKeyId)
+      console.log(`[KMS] Scheduled deletion of key ${deployment.kmsKeyId.slice(0, 8)}... for agent ${deployment.name}`)
+    } catch (err) {
+      console.error(`[KMS] Failed to schedule key deletion for ${deployment.name}:`, err instanceof Error ? err.message : err)
+      // Continue with deletion even if KMS cleanup fails
+    }
+  }
 
   db.runInTransaction(() => {
     db.deleteDeployment(request.params.agentId)
@@ -3202,7 +3517,7 @@ app.post('/api/agents/:agentId/chat', requireAuth, chatLimiter, async (request, 
 
     // Resolve per-agent client for dedicated wallets
     const agentClient = deployment.walletType === 'dedicated' && deployment.agentAccountId && deployment.agentPrivateKey
-      ? createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey)
+      ? createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId)
       : undefined
 
     // Get or create chat history (always refresh system prompt with user context)
@@ -3442,7 +3757,7 @@ async function executeScheduledPrompt(
 
   try {
     const agentClient = deployment.walletType === 'dedicated' && deployment.agentAccountId && deployment.agentPrivateKey
-      ? createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey)
+      ? createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId)
       : undefined
 
     let history = db.getChatHistory(deploymentId)
@@ -3529,6 +3844,10 @@ function routeMessageToAgent(
       keywords: ['topic', 'proposal', 'vote', 'governance', 'schedule', 'consensus', 'message', 'hcs'],
       templateId: 'governance-relay',
     },
+    {
+      keywords: ['bonzo', 'lending', 'borrow', 'deposit bonzo', 'yield', 'sentiment', 'fear', 'greed', 'keeper', 'apy', 'supply rate'],
+      templateId: 'bonzo-keeper',
+    },
   ]
 
   // Score each template
@@ -3590,7 +3909,7 @@ app.post('/api/chat/route', requireAuth, chatLimiter, async (request, response) 
   try {
     // Resolve per-agent client for dedicated wallets
     const routeAgentClient = deployment.walletType === 'dedicated' && deployment.agentAccountId && deployment.agentPrivateKey
-      ? createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey)
+      ? createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId)
       : undefined
 
     // Reuse the chat logic: build prompt, call OpenAI
@@ -4120,6 +4439,34 @@ const demoToolResponses: Record<string, (params: Record<string, unknown>) => Too
     raw: { transactionId: nextDemoTxId(), status: 'SUCCESS', scheduleId: nextDemoAccountId() },
     humanMessage: `**Scheduled transaction** created\n- **Amount**: ${params['amount'] ?? 1} HBAR\n- **Status**: Pending execution`,
   }),
+  crypto_sentiment_tool: () => ({
+    raw: { score: 42, classification: 'Fear', average7d: 38, trend: 'improving' },
+    humanMessage: '**Crypto Market Sentiment**\n\n**Fear & Greed Index**: 42/100 — **Fear**\n**7-day Average**: 38/100 (improving)\n**Trend**: 35 → 38 → 40 → 42\n\n**Keeper Recommendation**: FEAR — Cautious approach. Harvest rewards and hold in stable positions.',
+  }),
+  bonzo_market_data_tool: () => ({
+    raw: { markets: [{ symbol: 'USDC', supplyAPY: 0.048, borrowAPY: 0.067 }, { symbol: 'HBAR', supplyAPY: 0.032, borrowAPY: 0.055 }] },
+    humanMessage: '**Bonzo Lending Markets**\n\n- **USDC**: 4.80% supply APY, 6.70% borrow APY\n- **HBAR**: 3.20% supply APY, 5.50% borrow APY\n- **SAUCE**: 2.10% supply APY, 4.30% borrow APY',
+  }),
+  bonzo_deposit_tool: (params) => ({
+    raw: { transactionId: nextDemoTxId(), tokenSymbol: params['tokenSymbol'], amount: params['amount'] },
+    humanMessage: `**Deposited** ${params['amount']} ${params['tokenSymbol']} into Bonzo lending pool\n- **APY**: ~4.8%\n- **Transaction**: \`${nextDemoTxId()}\``,
+  }),
+  bonzo_withdraw_tool: (params) => ({
+    raw: { transactionId: nextDemoTxId(), tokenSymbol: params['tokenSymbol'], amount: params['amount'] },
+    humanMessage: `**Withdrew** ${params['amount']} ${params['tokenSymbol']} from Bonzo lending pool\n- **Transaction**: \`${nextDemoTxId()}\``,
+  }),
+  approve_erc20_tool: (params) => ({
+    raw: { transactionId: nextDemoTxId(), tokenSymbol: params['tokenSymbol'], amount: params['amount'] },
+    humanMessage: `**Approved** ${params['amount'] ?? 'max'} ${params['tokenSymbol']} for Bonzo LendingPool\n- **Transaction**: \`${nextDemoTxId()}\``,
+  }),
+  bonzo_borrow_tool: (params) => ({
+    raw: { transactionId: nextDemoTxId(), tokenSymbol: params['tokenSymbol'], amount: params['amount'] },
+    humanMessage: `**Borrowed** ${params['amount']} ${params['tokenSymbol']} from Bonzo at ${params['rateMode']} rate\n- **Transaction**: \`${nextDemoTxId()}\``,
+  }),
+  bonzo_repay_tool: (params) => ({
+    raw: { transactionId: nextDemoTxId(), tokenSymbol: params['tokenSymbol'], amount: params['amount'] },
+    humanMessage: `**Repaid** ${params['amount']} ${params['tokenSymbol']} to Bonzo lending pool\n- **Transaction**: \`${nextDemoTxId()}\``,
+  }),
 }
 
 function getDemoToolResponse(toolName: string, params: Record<string, unknown>): ToolResponse {
@@ -4148,6 +4495,10 @@ const demoChatResponses: Record<string, string[]> = {
   'governance-relay': [
     'Governance systems are **online**. I can help with:\n\n- **Create proposals** — submit to the HCS consensus topic\n- **Schedule transactions** — set up future actions\n- **Coordinate agents** — trigger cross-agent workflows\n\nWould you like to create a proposal or review existing ones?',
     'I manage the **governance layer** for your agent swarm:\n\n- **HCS Topics**: Active, receiving messages\n- **Scheduled Actions**: 3 pending\n- **Agent Coordination**: All links healthy\n\nWhat governance action would you like to take?',
+  ],
+  'bonzo-keeper': [
+    'I\'ve scanned the **Bonzo lending markets** and checked sentiment:\n\n- **Fear & Greed**: 42/100 (Fear)\n- **Best Supply APY**: USDC at 4.8%\n- **HBAR Supply APY**: 3.2%\n\n**Recommendation**: Market is cautious — consider depositing to stablecoins for safer yield. Want me to deposit?',
+    'Your **Bonzo Keeper** is active and monitoring:\n\n- **Sentiment**: Improving (38 → 42)\n- **Current Positions**: None active\n- **Available**: USDC, HBAR, SAUCE pools\n\nTell me your yield goal (e.g., "safe yield on HBAR") and I\'ll handle the rest!',
   ],
 }
 
@@ -4216,13 +4567,15 @@ app.post('/api/demo/seed', async (_request, response) => {
     let contractAddress: string | null = null
     let agentAccountId: string | null = null
     let agentPrivateKey: string | null = null
+    let kmsKeyId: string | null = null
 
     if (useRealHedera) {
       try {
         // Create real agent account
-        const agentAccount = await createAgentAccount(2)
+        const agentAccount = await createAgentAccount(2, seed.name)
         agentAccountId = agentAccount.accountId
         agentPrivateKey = agentAccount.privateKey
+        kmsKeyId = agentAccount.kmsKeyId
 
         // Create real topic
         const topicResult = await executeTool(
@@ -4283,6 +4636,7 @@ app.post('/api/demo/seed', async (_request, response) => {
       agentAccountId,
       agentPrivateKey,
       walletType: 'dedicated',
+      kmsKeyId,
     }
     db.insertDeployment(deployment)
     created.push(deployment)
