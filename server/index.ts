@@ -414,6 +414,9 @@ function buildAgentSystemPrompt(deployment: DeploymentRecord, userAccountId?: st
     ...accountLines,
     deployment.topicId ? `Audit Topic: ${deployment.topicId}` : '',
     deployment.contractId ? `Vault Contract: ${deployment.contractId}` : '',
+    deployment.kmsKeyId
+      ? `Key Management: Your signing key is protected by AWS KMS (Key ID: ${deployment.kmsKeyId.slice(0, 8)}...). Your private key is NEVER stored in plaintext — it is encrypted by a dedicated AWS KMS symmetric key and only decrypted in-memory for the milliseconds needed to sign transactions, then immediately wiped. All key operations are logged in AWS CloudTrail for compliance auditing.`
+      : '',
     '',
     'You have access to Hedera blockchain tools. Use them to help the user with on-chain operations.',
     'Always explain what you are doing and why. If a tool execution fails, explain the error clearly.',
