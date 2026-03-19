@@ -56,7 +56,8 @@ db.exec(`
     vault_cap_hbar REAL NOT NULL DEFAULT 0,
     agent_account_id TEXT,
     agent_private_key_encrypted TEXT,
-    wallet_type TEXT NOT NULL DEFAULT 'platform'
+    wallet_type TEXT NOT NULL DEFAULT 'platform',
+    kms_key_id TEXT
   );
 
   CREATE TABLE IF NOT EXISTS activity_log (
@@ -156,6 +157,13 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 `)
 
+// ─── Migrations (add columns to existing DBs) ───────
+try {
+  db.exec(`ALTER TABLE deployments ADD COLUMN kms_key_id TEXT`)
+} catch {
+  // Column already exists — ignore
+}
+
 // ─── Types ───────────────────────────────────────────
 export type DbUser = {
   id: string
@@ -195,6 +203,7 @@ type DeploymentRow = {
   agent_account_id: string | null
   agent_private_key_encrypted: string | null
   wallet_type: string
+  kms_key_id: string | null
 }
 
 export type DeploymentRecord = {
@@ -218,6 +227,7 @@ export type DeploymentRecord = {
   agentAccountId: string | null
   agentPrivateKey: string | null
   walletType: string
+  kmsKeyId: string | null
 }
 
 function rowToDeployment(row: DeploymentRow): DeploymentRecord {
@@ -254,6 +264,7 @@ function rowToDeployment(row: DeploymentRow): DeploymentRecord {
     agentAccountId: row.agent_account_id,
     agentPrivateKey: privateKey,
     walletType: row.wallet_type,
+    kmsKeyId: row.kms_key_id,
   }
 }
 
@@ -299,12 +310,12 @@ const stmtInsertDeployment = db.prepare(`
     id, user_id, template_id, name, room, guardrail, vault_protected,
     capability_groups, status, last_action, executions, created_at,
     topic_id, contract_id, contract_address, deployment_tx_id,
-    vault_cap_hbar, agent_account_id, agent_private_key_encrypted, wallet_type
+    vault_cap_hbar, agent_account_id, agent_private_key_encrypted, wallet_type, kms_key_id
   ) VALUES (
     @id, @user_id, @template_id, @name, @room, @guardrail, @vault_protected,
     @capability_groups, @status, @last_action, @executions, @created_at,
     @topic_id, @contract_id, @contract_address, @deployment_tx_id,
-    @vault_cap_hbar, @agent_account_id, @agent_private_key_encrypted, @wallet_type
+    @vault_cap_hbar, @agent_account_id, @agent_private_key_encrypted, @wallet_type, @kms_key_id
   )
 `)
 
@@ -318,7 +329,8 @@ const stmtUpdateDeployment = db.prepare(`
     contract_address = @contract_address,
     vault_cap_hbar = @vault_cap_hbar,
     agent_account_id = @agent_account_id,
-    agent_private_key_encrypted = @agent_private_key_encrypted
+    agent_private_key_encrypted = @agent_private_key_encrypted,
+    kms_key_id = @kms_key_id
   WHERE id = @id
 `)
 
@@ -360,6 +372,7 @@ export function insertDeployment(record: DeploymentRecord): void {
     agent_account_id: record.agentAccountId,
     agent_private_key_encrypted: encryptedKey,
     wallet_type: record.walletType,
+    kms_key_id: record.kmsKeyId ?? null,
   })
 }
 
@@ -376,6 +389,7 @@ export function updateDeployment(record: DeploymentRecord): void {
     vault_cap_hbar: record.vaultCapHbar,
     agent_account_id: record.agentAccountId,
     agent_private_key_encrypted: encryptedKey,
+    kms_key_id: record.kmsKeyId ?? null,
   })
 }
 
@@ -1038,6 +1052,7 @@ export function migrateFromJson(): void {
           agentAccountId: (record.agentAccountId as string) ?? null,
           agentPrivateKey: (record.agentPrivateKey as string) ?? null,
           walletType: String(record.walletType ?? 'platform'),
+          kmsKeyId: null,
         }
 
         insertDeployment(deployment)

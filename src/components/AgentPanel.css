@@ -69,6 +69,23 @@
   letter-spacing: 0.5px;
 }
 
+/* ─── KMS Badge ───────────────────────────────── */
+.ap-kms-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  background: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+  border: 1px solid rgba(46, 204, 113, 0.3);
+  vertical-align: middle;
+}
+
 /* ─── Header Wallet Badge ─────────────────────── */
 .ap-header-wallet {
   display: flex;

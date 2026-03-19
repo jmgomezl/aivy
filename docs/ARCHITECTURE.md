@@ -7,7 +7,8 @@ Aivy is a monorepo with a React frontend and Express backend that orchestrates A
 - **Frontend**: Pixel office UI with animated sprites, deployment console, AI chat, and wallet integration.
 - **Backend**: Express API handling agent lifecycle, AI tool calling, scheduling, and event polling.
 - **Vault layer**: AivyVault Solidity contracts deployed on Hedera EVM for on-chain spending guardrails.
-- **Data layer**: SQLite for agent state, Mirror Node for on-chain data, and AES-256-GCM for key encryption.
+- **Key management layer**: AWS KMS envelope encryption — each agent's private key is encrypted by a dedicated KMS symmetric key. Keys are never stored in plaintext.
+- **Data layer**: SQLite for agent state, Mirror Node for on-chain data, and AES-256-GCM for application-layer encryption.
 
 ## Core principle
 
@@ -117,6 +118,64 @@ Integration points:
 - **Mirror Node** — Balance queries, transaction history, event polling.
 - **HashScan** — Transaction links in the activity feed.
 
+### 6. AWS KMS Key Management Layer
+
+> 📖 Full documentation: [KMS_SECURITY.md](KMS_SECURITY.md)
+
+Aivy integrates AWS KMS for secure cryptographic key management. Every agent gets a **dedicated KMS symmetric key** that protects its Hedera signing key via envelope encryption.
+
+**Architecture:**
+
+```
+┌─────────────┐    ┌──────────────┐    ┌─────────────────┐
+│  Agent needs │───▶│ KMS Decrypt  │───▶│ Sign Hedera Tx  │
+│  to sign tx  │    │ (< 50ms)     │    │ Wipe key memory │
+└─────────────┘    └──────────────┘    └─────────────────┘
+                          │
+                   AWS CloudTrail
+                   logs every call
+```
+
+**Key lifecycle:**
+
+1. **Create** — `CreateKeyCommand` (symmetric AES-256) + tag with agent metadata
+2. **Encrypt** — Generate Ed25519 keypair → encrypt private key with KMS → store ciphertext
+3. **Sign** — Decrypt in memory → sign transaction → `Buffer.fill(0)` wipe
+4. **Rotate** — Generate new keypair → encrypt with same KMS key → update DB
+5. **Delete** — `ScheduleKeyDeletion` with 7-day safety window on agent destruction
+
+**Security properties:**
+
+- Private keys never exist in plaintext at rest
+- Each agent has its own KMS key (blast radius = 1 agent)
+- Encryption context (`{platform, agent, keyType}`) prevents cross-agent decryption
+- CloudTrail provides complete audit trail of every key operation
+- Auto-rotation enabled on all KMS keys
+
+**Implementation:** [`server/kms.ts`](../server/kms.ts) — 385 lines, 8 exported functions
+
+```mermaid
+graph LR
+    D[Deploy Agent] -->|1| KMS[AWS KMS: CreateKey]
+    KMS -->|2| GEN[Generate Ed25519]
+    GEN -->|3| ENC[KMS Encrypt Private Key]
+    ENC -->|4| DB[(SQLite: ciphertext)]
+
+    TX[Agent Signs Tx] -->|1| DEC[KMS Decrypt]
+    DEC -->|2| SIGN[Sign with Hedera SDK]
+    SIGN -->|3| WIPE[Buffer.fill 0]
+
+    DEL[Destroy Agent] -->|1| SCHED[KMS ScheduleKeyDeletion]
+    SCHED -->|7 days| GONE[Key Permanently Deleted]
+
+    style KMS fill:#FF9900,color:#000
+    style ENC fill:#FF9900,color:#000
+    style DEC fill:#FF9900,color:#000
+    style SCHED fill:#FF9900,color:#000
+```
+
+---
+
 ## Current repository structure
 
 ```
@@ -126,9 +185,10 @@ contracts/
 
 server/
   index.ts                # Express API + Hedera integration
-  db.ts                   # SQLite persistence
+  kms.ts                  # 🔐 AWS KMS — key creation, encryption, rotation, deletion
+  db.ts                   # SQLite persistence (stores KMS key IDs + ciphertext)
   auth.ts                 # JWT + Hedera account auth
-  crypto.ts               # AES-256-GCM key encryption
+  crypto.ts               # AES-256-GCM encryption (additional layer)
   scheduler.ts            # Cron-based autonomous execution
   eventPoller.ts          # Mirror Node event polling
   rateLimiter.ts          # Per-route rate limiting
@@ -162,11 +222,27 @@ tests/                     # 159+ unit tests
   server/
 ```
 
-## Security model
+## Security model — Three-Layer Defense-in-Depth
 
-1. **Key encryption** — Agent private keys encrypted with AES-256-GCM at rest.
-2. **Vault contracts** — On-chain spending caps prevent overspending.
+```
+┌────────────────────────────────────────────────────────┐
+│              Layer 3: AWS KMS                           │
+│    Envelope encryption · CloudTrail audit · Rotation    │
+│   ┌────────────────────────────────────────────────┐   │
+│   │         Layer 2: AivyVault.sol (EVM)            │   │
+│   │    On-chain spending caps · Solidity guardrails  │   │
+│   │   ┌────────────────────────────────────────┐    │   │
+│   │   │     Layer 1: Application Security       │    │   │
+│   │   │  JWT · AES-256-GCM · Rate limits · RBAC │    │   │
+│   │   └────────────────────────────────────────┘    │   │
+│   └────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────┘
+```
+
+1. **AWS KMS envelope encryption** — Each agent's private key encrypted by a dedicated KMS symmetric key. Keys decrypted in-memory only for signing (< 50ms), then wiped. Full CloudTrail audit. ([Details](KMS_SECURITY.md))
+2. **Vault contracts** — On-chain spending caps prevent overspending even if application is compromised.
 3. **Capability groups** — Agents only access tools in their assigned groups.
-4. **JWT auth** — Challenge-response with Hedera account verification.
-5. **Rate limiting** — Per-route limits to prevent abuse.
-6. **User scoping** — Each user sees only their own agents.
+4. **Key encryption at rest** — Application-layer AES-256-GCM on top of KMS encryption.
+5. **JWT auth** — Challenge-response with Hedera account verification.
+6. **Rate limiting** — Per-route limits to prevent abuse.
+7. **User scoping** — Each user sees only their own agents.

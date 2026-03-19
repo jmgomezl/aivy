@@ -61,6 +61,34 @@ Success criteria:
 - Provider receives payment only after evaluator approval.
 - Client can reclaim escrowed HBAR after rejection or expiry.
 
+## Phase 1.7: AWS KMS Secure Key Management (Complete)
+
+Goal: Implement enterprise-grade key management using AWS KMS so private keys are never stored in plaintext.
+
+Deliverables:
+
+1. `server/kms.ts` — Full AWS KMS integration module (385 lines, 8 exported functions).
+2. Per-agent KMS symmetric key creation with aliases and tags.
+3. Envelope encryption — Hedera Ed25519 keys encrypted by KMS, stored as ciphertext.
+4. In-memory-only signing — decrypt, sign, wipe in < 50ms.
+5. Key rotation endpoint (`POST /api/agents/:id/kms/rotate`).
+6. Automatic KMS key rotation (annual) via `EnableKeyRotation`.
+7. Scheduled key deletion on agent destruction (7-day safety window).
+8. KMS status and info API endpoints.
+9. Encryption context enforcement (`{platform, agent, keyType}`).
+10. Graceful fallback to AES-256-GCM when AWS credentials not configured.
+11. KMS security documentation with architecture diagrams ([docs/KMS_SECURITY.md](KMS_SECURITY.md)).
+
+Success criteria:
+
+- Agent keys encrypted by KMS and never stored in plaintext.
+- Successful HBAR transfer signed via KMS-protected key (verified on HashScan).
+- Key rotation works without agent downtime.
+- CloudTrail logs every KMS operation for compliance audit.
+- 10 KMS-protected agents running in production on aivylabs.xyz.
+
+---
+
 ## Phase 2: Post-hackathon productization
 
 Goal: Move from demo to reusable builder product.

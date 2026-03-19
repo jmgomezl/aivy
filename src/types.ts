@@ -67,6 +67,7 @@ export type ServerDeployment = {
   vaultCapHbar: number
   agentAccountId: string | null
   walletType: 'platform' | 'dedicated'
+  kmsKeyId: string | null
 }
 
 export type ToolCatalogGroup = {

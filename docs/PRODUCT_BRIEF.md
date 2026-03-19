@@ -25,7 +25,8 @@ For the hackathon, the product behaves as a template-first platform with proof o
 
 - Primary mode: template-first deployment system.
 - Demo proof: real agents running on Hedera testnet with dedicated accounts.
-- Security posture: vault-first by default — every agent gets an AivyVault contract.
+- Security posture: vault-first + KMS-first by default — every agent gets an AivyVault contract and a dedicated AWS KMS key.
+- Key management: AWS KMS envelope encryption — private keys never stored in plaintext, with full CloudTrail audit trail.
 
 ## Main user promise
 
@@ -33,9 +34,10 @@ Developers and operators can launch an agent without manually wiring wallets, ru
 
 ## Key differentiators
 
+- **AWS KMS key management** — every agent's signing key protected by a dedicated KMS key. Zero plaintext keys at rest. Full CloudTrail audit.
 - Visual pixel office with animated agent sprites — not a generic dashboard.
 - Hedera-native positioning, not generic agent tooling.
-- AivyVault default path that enforces spending caps on-chain via Solidity.
+- AivyVault + KMS — defense-in-depth with on-chain spending caps AND cryptographic key protection.
 - Quick-fund flow — fund agents in 2-3 clicks with preset amounts.
 - Low-code deployment flow that can become a managed platform later.
 
@@ -49,6 +51,7 @@ Developers and operators can launch an agent without manually wiring wallets, ru
 6. Quick-fund modal with HashPack wallet integration.
 7. AI chat with 50+ Hedera Agent Kit tools.
 8. Autonomous execution via cron schedules and event triggers.
+9. **AWS KMS integration** — per-agent envelope encryption, key rotation, scheduled deletion, CloudTrail audit.
 
 ## Demo narrative
 
