@@ -896,6 +896,244 @@
 }
 
 /* ═══════════════════════════════════════════════════
+   Deploy Overlay — Cinematic Loading
+   ═══════════════════════════════════════════════════ */
+
+.deploy-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: deploy-fade-in 0.5s ease-out;
+}
+
+.deploy-overlay-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(90, 214, 181, 0.06) 0%, transparent 60%),
+    radial-gradient(ellipse at 30% 70%, rgba(243, 195, 95, 0.04) 0%, transparent 50%),
+    linear-gradient(180deg, #050a15 0%, #0a1225 50%, #060b18 100%);
+  backdrop-filter: blur(20px);
+}
+
+.deploy-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.75rem;
+  max-width: 520px;
+  width: 90%;
+  padding: 2rem;
+}
+
+/* ─── Step trail dots ─── */
+.deploy-trail {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.deploy-trail-dot {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.deploy-trail-icon {
+  font-size: 14px;
+  opacity: 0.25;
+  transition: all 0.4s ease;
+  display: block;
+}
+
+.deploy-trail-dot.done .deploy-trail-icon {
+  opacity: 0.6;
+  filter: grayscale(0.3);
+}
+
+.deploy-trail-dot.active .deploy-trail-icon {
+  opacity: 1;
+  font-size: 18px;
+  filter: none;
+  animation: deploy-dot-pop 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.deploy-trail-dot.pending .deploy-trail-icon {
+  opacity: 0.15;
+  font-size: 10px;
+}
+
+/* ─── Step card ─── */
+.deploy-step-card {
+  text-align: center;
+  animation: deploy-step-in 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.deploy-step-icon {
+  font-size: 48px;
+  margin-bottom: 0.75rem;
+  animation: deploy-icon-float 3s ease-in-out infinite;
+  filter: drop-shadow(0 0 20px rgba(90, 214, 181, 0.3));
+}
+
+.deploy-step-title {
+  font-family: 'VT323', monospace;
+  font-size: clamp(28px, 5vw, 36px);
+  color: #f4f8ff;
+  margin: 0 0 0.5rem;
+  letter-spacing: 0.5px;
+}
+
+.deploy-step-detail {
+  font-family: 'IBM Plex Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  color: #5ad6b5;
+  margin: 0;
+  min-height: 1.6em;
+  letter-spacing: 0.2px;
+}
+
+.deploy-cursor {
+  color: #5ad6b5;
+  animation: deploy-blink 0.6s step-end infinite;
+  font-weight: 300;
+}
+
+.deploy-step-sub {
+  font-size: 12px;
+  color: #5a6888;
+  margin: 0.5rem 0 0;
+  font-style: italic;
+}
+
+/* ─── Terminal log ─── */
+.deploy-terminal {
+  width: 100%;
+  background: rgba(10, 18, 37, 0.8);
+  border: 1px solid rgba(90, 214, 181, 0.12);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-family: 'IBM Plex Mono', 'Fira Code', monospace;
+  font-size: 11.5px;
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.deploy-log-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.6;
+  animation: deploy-log-slide 0.3s ease-out;
+}
+
+.deploy-log-line.done {
+  color: #4a5a78;
+}
+
+.deploy-log-line.current {
+  color: #5ad6b5;
+}
+
+.deploy-log-prefix {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+}
+
+.deploy-log-line.done .deploy-log-prefix {
+  color: #5ad6b5;
+}
+
+.deploy-log-line.current .deploy-log-prefix {
+  animation: deploy-blink 0.6s step-end infinite;
+}
+
+.deploy-log-text {
+  flex: 1;
+}
+
+.deploy-log-time {
+  color: #3a4a68;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+/* ─── Progress bar ─── */
+.deploy-progress {
+  width: 100%;
+  height: 3px;
+  background: rgba(90, 214, 181, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.deploy-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #5ad6b5, #4ecdc4, #f3c35f);
+  border-radius: 2px;
+  transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 0 12px rgba(90, 214, 181, 0.4);
+}
+
+.deploy-progress-label {
+  font-size: 11px;
+  color: #4a5a78;
+  margin: 0;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+/* ─── Animations ─── */
+@keyframes deploy-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes deploy-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes deploy-dot-pop {
+  0% { transform: scale(0.5); }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+@keyframes deploy-icon-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes deploy-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes deploy-log-slide {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ═══════════════════════════════════════════════════
    Mobile
    ═══════════════════════════════════════════════════ */
 @media (max-width: 600px) {
@@ -957,5 +1195,27 @@
   .vault-code {
     font-size: 10.5px;
     max-height: 300px;
+  }
+
+  .deploy-content {
+    padding: 1.5rem 1rem;
+    gap: 1.25rem;
+  }
+
+  .deploy-step-icon {
+    font-size: 36px;
+  }
+
+  .deploy-trail-icon {
+    font-size: 11px;
+  }
+
+  .deploy-trail-dot.active .deploy-trail-icon {
+    font-size: 15px;
+  }
+
+  .deploy-terminal {
+    font-size: 10px;
+    padding: 8px 12px;
   }
 }

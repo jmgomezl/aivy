@@ -1,4 +1,4 @@
-import { type CSSProperties, useState, useEffect, useMemo } from 'react'
+import { type CSSProperties, useState, useEffect, useMemo, useRef } from 'react'
 import { templates, roomCards } from '../data'
 import { getSpriteSheet, ensureSpritesLoaded, agentNameToSpriteType } from '../sprites/generateSprites'
 import './Landing.css'
@@ -35,6 +35,157 @@ const demoTickerItems = [
   { text: 'Governance Relay: Proposal topic created', tone: 'success' },
   { text: 'Treasury Sentinel: Transferred 25 HBAR', tone: 'vault' },
 ]
+
+/* ─── Deployment Story Steps ─────────────────────── */
+const deploySteps = [
+  {
+    icon: '🔐',
+    title: 'Generating KMS Keys',
+    detail: 'Creating dedicated AWS KMS symmetric keys for each agent...',
+    sub: 'Private keys will never be stored in plaintext',
+  },
+  {
+    icon: '🏗️',
+    title: 'Creating Hedera Accounts',
+    detail: 'Deploying dedicated wallets for Treasury, Yield, Compliance & Governance agents...',
+    sub: 'Each agent gets its own isolated on-chain identity',
+  },
+  {
+    icon: '🔒',
+    title: 'Encrypting Signing Keys',
+    detail: 'Wrapping Ed25519 keys with KMS envelope encryption...',
+    sub: 'AES-256 via AWS KMS — decrypted only in-memory for signing',
+  },
+  {
+    icon: '📜',
+    title: 'Compiling Smart Contracts',
+    detail: 'Building AivyVault.sol with Solidity compiler...',
+    sub: 'On-chain spending caps to protect every agent',
+  },
+  {
+    icon: '⛓️',
+    title: 'Deploying Vault Contracts',
+    detail: 'Submitting ContractCreateFlow transactions to Hedera EVM...',
+    sub: 'Guardrails enforced at the blockchain level',
+  },
+  {
+    icon: '📡',
+    title: 'Creating Audit Topics',
+    detail: 'Setting up HCS consensus topics for immutable action logging...',
+    sub: 'Every agent action recorded on Hedera Consensus Service',
+  },
+  {
+    icon: '🤖',
+    title: 'Initializing AI Sessions',
+    detail: 'Connecting agents to GPT-4o with 50+ Hedera tools...',
+    sub: 'Natural language interface to the entire Hedera network',
+  },
+  {
+    icon: '✅',
+    title: 'Almost There!',
+    detail: 'All agents are live and secured — hang tight, opening the office for you...',
+    sub: 'You will be redirected automatically in a moment',
+  },
+]
+
+/** Full-screen cinematic overlay shown during demo deployment */
+function DeployOverlay({ active }: { active: boolean }) {
+  const [step, setStep] = useState(0)
+  const [typedChars, setTypedChars] = useState(0)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Advance steps on a timer — variable pace to fill ~45s total wait
+  // Earlier steps are slower (user is more engaged), last step stays visible
+  const stepDelays = [5500, 6000, 5500, 5500, 5500, 6000, 5500, 999999]
+
+  useEffect(() => {
+    if (!active) { setStep(0); setTypedChars(0); return }
+    let currentStep = 0
+    let timeout: ReturnType<typeof setTimeout>
+
+    const scheduleNext = () => {
+      timeout = setTimeout(() => {
+        currentStep++
+        if (currentStep >= deploySteps.length) return
+        setStep(currentStep)
+        scheduleNext()
+      }, stepDelays[currentStep])
+    }
+    scheduleNext()
+
+    return () => clearTimeout(timeout)
+  }, [active])
+
+  // Typewriter for current step detail
+  useEffect(() => {
+    setTypedChars(0)
+    if (!active) return
+    const text = deploySteps[step]?.detail ?? ''
+    if (intervalRef.current) clearInterval(intervalRef.current)
+    let i = 0
+    intervalRef.current = setInterval(() => {
+      i++
+      setTypedChars(i)
+      if (i >= text.length && intervalRef.current) clearInterval(intervalRef.current)
+    }, 35)
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
+  }, [step, active])
+
+  if (!active) return null
+
+  const current = deploySteps[step]
+  const progress = ((step + 1) / deploySteps.length) * 100
+
+  return (
+    <div className="deploy-overlay">
+      <div className="deploy-overlay-bg" />
+
+      <div className="deploy-content">
+        {/* Completed steps trail */}
+        <div className="deploy-trail">
+          {deploySteps.map((s, i) => (
+            <div
+              key={i}
+              className={`deploy-trail-dot${i < step ? ' done' : ''}${i === step ? ' active' : ''}${i > step ? ' pending' : ''}`}
+            >
+              <span className="deploy-trail-icon">{i <= step ? s.icon : '○'}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Current step card */}
+        <div className="deploy-step-card" key={step}>
+          <div className="deploy-step-icon">{current.icon}</div>
+          <h2 className="deploy-step-title">{current.title}</h2>
+          <p className="deploy-step-detail">
+            {current.detail.slice(0, typedChars)}
+            <span className="deploy-cursor">|</span>
+          </p>
+          <p className="deploy-step-sub">{current.sub}</p>
+        </div>
+
+        {/* Terminal-style log feed */}
+        <div className="deploy-terminal">
+          {deploySteps.slice(0, step + 1).map((s, i) => (
+            <div key={i} className={`deploy-log-line${i === step ? ' current' : ' done'}`}>
+              <span className="deploy-log-prefix">{i < step ? '✓' : '▸'}</span>
+              <span className="deploy-log-text">{s.title}</span>
+              {i < step && <span className="deploy-log-time">{(1.2 + i * 0.8).toFixed(1)}s</span>}
+            </div>
+          ))}
+        </div>
+
+        {/* Progress bar */}
+        <div className="deploy-progress">
+          <div className="deploy-progress-fill" style={{ width: `${progress}%` }} />
+        </div>
+        <p className="deploy-progress-label">
+          Step {step + 1} of {deploySteps.length}
+        </p>
+      </div>
+    </div>
+  )
+}
 
 /** Animated pixel sprite for the landing page using the tileset */
 function LandingSprite({ name }: { name: string }) {
@@ -76,6 +227,7 @@ export default function Landing({ onEnter, onTryDemo, onAbout }: LandingProps) {
 
   return (
     <div className="landing">
+      <DeployOverlay active={demoLoading} />
       <div className="landing-content">
         <header className="landing-header" style={{ animationDelay: '0s' }}>
           <img className="landing-brand-logo" src="/logo-192.png" alt="Aivy" />
