@@ -399,6 +399,12 @@ export default function Landing({ onEnter, onTryDemo, onAbout }: LandingProps) {
               </button>
             </>
           )}
+          {' '}&middot;{' '}
+          <a className="landing-about-link" href="https://github.com/jmgomezl/aivy" target="_blank" rel="noopener noreferrer">
+            GitHub
+          </a>
+          {' '}&middot;{' '}
+          <span className="landing-license">MIT License</span>
         </p>
       </div>
     </div>

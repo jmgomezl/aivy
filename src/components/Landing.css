@@ -895,6 +895,11 @@
   opacity: 1;
 }
 
+.landing-license {
+  color: #6b7a99;
+  font-size: inherit;
+}
+
 /* ═══════════════════════════════════════════════════
    Deploy Overlay — Cinematic Loading
    ═══════════════════════════════════════════════════ */
