@@ -339,7 +339,8 @@ const stmtUpdateDeployment = db.prepare(`
     contract_address = @contract_address,
     vault_cap_hbar = @vault_cap_hbar,
     agent_account_id = @agent_account_id,
-    agent_private_key_encrypted = @agent_private_key_encrypted
+    agent_private_key_encrypted = @agent_private_key_encrypted,
+    kms_key_id = @kms_key_id
   WHERE id = @id
 `)
 
@@ -403,6 +404,7 @@ export function updateDeployment(record: DeploymentRecord): void {
     vault_cap_hbar: record.vaultCapHbar,
     agent_account_id: record.agentAccountId,
     agent_private_key_encrypted: encryptedKey,
+    kms_key_id: record.kmsKeyId ?? null,
   })
 }
 

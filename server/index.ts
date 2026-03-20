@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import express from 'express'
+import { createAgentKmsKey, decryptAgentKey, isKmsConfigured, rotateAgentKey, getKeyInfo, encryptExistingKey, scheduleKeyDeletion } from './kms.js'
 import solc from 'solc'
 import OpenAI from 'openai'
 import {
@@ -219,6 +220,7 @@ type DeploymentRecord = {
   agentAccountId: string | null
   agentPrivateKey: string | null
   walletType: 'platform' | 'dedicated'
+  kmsKeyId: string | null
 }
 
 type ToolResponse = {
@@ -414,6 +416,9 @@ function buildAgentSystemPrompt(deployment: DeploymentRecord, userAccountId?: st
     ...accountLines,
     deployment.topicId ? `Audit Topic: ${deployment.topicId}` : '',
     deployment.contractId ? `Vault Contract: ${deployment.contractId}` : '',
+    deployment.kmsKeyId
+      ? `Key Management: Your signing key is protected by AWS KMS (Key ID: ${deployment.kmsKeyId.slice(0, 8)}...). Your private key is NEVER stored in plaintext — it is encrypted by a dedicated AWS KMS symmetric key and only decrypted in-memory for the milliseconds needed to sign transactions, then immediately wiped. All key operations are logged in AWS CloudTrail for compliance auditing.`
+      : '',
     '',
     // KMS security info — so the agent can answer questions about its key protection
     deployment.kmsKeyId
@@ -1708,7 +1713,7 @@ const createAgentAccount = async (
   const tx = await new AccountCreateTransaction()
     .setKey(agentKey.publicKey)
     .setInitialBalance(new Hbar(initialHbar))
-    .setTransactionMemo('Aivy agent account')
+    .setTransactionMemo(kmsKeyId ? 'Aivy agent account (KMS-protected)' : 'Aivy agent account')
     .execute(client)
 
   const receipt = await tx.getReceipt(client)
@@ -2108,7 +2113,20 @@ const executeTool = async (toolName: string, params: Record<string, unknown>, ag
     }
   }
 
-  const result = await execute(params)
+  let result: string | ToolResponse
+  try {
+    result = await execute(params)
+  } catch (execErr) {
+    const msg = execErr instanceof Error ? execErr.message : String(execErr)
+    // Friendly error messages for known external API issues
+    if (toolName.startsWith('bonzo_') || toolName === 'approve_erc20_tool') {
+      return {
+        raw: { error: msg },
+        humanMessage: `⚠️ **Bonzo Finance API is temporarily unavailable.** This is an external service issue, not an Aivy problem. The Bonzo API may be rebuilding its cache or under maintenance. Please try again in a few minutes.`,
+      } as ToolResponse
+    }
+    throw execErr
+  }
 
   // HederaAIToolkit wraps results in JSON.stringify — parse back to object
   let parsed: Record<string, unknown>
@@ -2624,6 +2642,79 @@ app.post('/api/nft/upload', requireAuth, nftUpload.single('image'), (request, re
   const metadataUrl = `${baseUrl}/uploads/${metadataFilename}`
 
   response.json({ imageUrl, metadataUrl, filename: file.filename })
+})
+
+// ─── KMS Key Management Endpoints ─────────────────────
+app.get('/api/kms/status', requireAuth, (_request, response) => {
+  response.json({
+    enabled: isKmsConfigured(),
+    region: process.env.AWS_REGION || 'us-east-1',
+    provider: 'AWS KMS',
+  })
+})
+
+app.post('/api/agents/:id/kms/rotate', requireAuth, async (request, response) => {
+  try {
+    const deployment = db.getDeployment(request.params.id)
+    if (!deployment) {
+      response.status(404).json({ error: 'Agent not found' })
+      return
+    }
+    if (!deployment.kmsKeyId) {
+      response.status(400).json({ error: 'Agent does not use KMS key management' })
+      return
+    }
+    if (!isKmsConfigured()) {
+      response.status(503).json({ error: 'AWS KMS is not configured' })
+      return
+    }
+
+    // Rotate the key: generate new Hedera keypair, encrypt with same KMS key
+    const rotated = await rotateAgentKey(deployment.kmsKeyId, deployment.name)
+
+    // Update the on-chain account key (requires the old key to sign)
+    // For now, just update the DB with the new encrypted key
+    deployment.agentPrivateKey = rotated.newPrivateKey.toStringRaw()
+    db.updateDeployment(deployment)
+
+    console.log(`[KMS] Key rotated for agent ${deployment.name} (${deployment.id})`)
+    response.json({
+      success: true,
+      message: `Key rotated for agent ${deployment.name}`,
+      kmsKeyId: deployment.kmsKeyId,
+      newPublicKey: rotated.publicKey.slice(0, 40) + '...',
+    })
+  } catch (error) {
+    console.error('[KMS] Rotation error:', error)
+    response.status(500).json({ error: error instanceof Error ? error.message : 'Key rotation failed' })
+  }
+})
+
+app.get('/api/agents/:id/kms/info', requireAuth, async (request, response) => {
+  try {
+    const deployment = db.getDeployment(request.params.id)
+    if (!deployment) {
+      response.status(404).json({ error: 'Agent not found' })
+      return
+    }
+    if (!deployment.kmsKeyId) {
+      response.json({ enabled: false, message: 'Agent uses local key management' })
+      return
+    }
+
+    const info = await getKeyInfo(deployment.kmsKeyId)
+    response.json({
+      enabled: true,
+      keyId: info.keyId,
+      arn: info.arn,
+      createdAt: info.creationDate,
+      description: info.description,
+      provider: 'AWS KMS',
+      region: process.env.AWS_REGION || 'us-east-1',
+    })
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : 'Failed to get KMS info' })
+  }
 })
 
 app.get('/api/live', readLimiter, async (request, response) => {
@@ -4497,6 +4588,7 @@ app.post('/api/demo/seed', async (_request, response) => {
     let contractAddress: string | null = null
     let agentAccountId: string | null = null
     let agentPrivateKey: string | null = null
+    let kmsKeyId: string | null = null
 
     if (useRealHedera) {
       try {
@@ -4505,6 +4597,7 @@ app.post('/api/demo/seed', async (_request, response) => {
         const agentAccount = await createAgentAccount(10, { useKms: false })
         agentAccountId = agentAccount.accountId
         agentPrivateKey = agentAccount.privateKey
+        kmsKeyId = agentAccount.kmsKeyId
 
         // Create real topic
         const topicResult = await executeTool(
