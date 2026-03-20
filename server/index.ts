@@ -33,6 +33,7 @@ import {
 } from 'hedera-agent-kit'
 import {
   AccountCreateTransaction,
+  AccountId,
   Client,
   ContractCreateFlow,
   ContractExecuteTransaction,
@@ -51,6 +52,7 @@ import { authMiddleware, requireAuth, type AuthRequest } from './middleware.js'
 import { deployLimiter, chatLimiter, toolLimiter, readLimiter, authLimiter } from './rateLimiter.js'
 import { startSchedule, stopSchedule, stopAllSchedules, validateCron, acquireAgentLock, releaseAgentLock } from './scheduler.js'
 import { startPoller, stopPoller } from './eventPoller.js'
+import { isKmsAvailable, createAgentKmsKey, kmsEncryptKey, kmsDecryptKey, scheduleKmsKeyDeletion } from './kms.js'
 import { saucerswapPlugin } from 'hak-saucerswap-plugin'
 import { pythPlugin } from 'hak-pyth-plugin'
 import { memejobPlugin } from '@buidlerlabs/hak-memejob-plugin'
@@ -416,6 +418,23 @@ function buildAgentSystemPrompt(deployment: DeploymentRecord, userAccountId?: st
     deployment.contractId ? `Vault Contract: ${deployment.contractId}` : '',
     deployment.kmsKeyId
       ? `Key Management: Your signing key is protected by AWS KMS (Key ID: ${deployment.kmsKeyId.slice(0, 8)}...). Your private key is NEVER stored in plaintext — it is encrypted by a dedicated AWS KMS symmetric key and only decrypted in-memory for the milliseconds needed to sign transactions, then immediately wiped. All key operations are logged in AWS CloudTrail for compliance auditing.`
+      : '',
+    '',
+    // KMS security info — so the agent can answer questions about its key protection
+    deployment.kmsKeyId
+      ? [
+          '## KEY SECURITY — AWS KMS ENVELOPE ENCRYPTION',
+          `Your Ed25519 signing key is protected by AWS KMS envelope encryption (KMS Key ID: ${deployment.kmsKeyId}).`,
+          'How it works:',
+          '- You have a dedicated AWS KMS symmetric key that wraps your Ed25519 private key.',
+          '- Your private key is NEVER stored in plaintext — it is encrypted (envelope encryption) and only decrypted in-memory for <50ms during transaction signing, then immediately wiped with Buffer.fill(0).',
+          '- This provides defense-in-depth: even if the database is compromised, the attacker cannot extract your signing key without access to AWS KMS.',
+          'Aivy uses a three-layer security model:',
+          '1. **Application layer**: JWT authentication + AES-256-GCM encryption at rest',
+          '2. **Smart contract layer**: AivyVault.sol on-chain spending caps',
+          '3. **Cloud HSM layer**: AWS KMS envelope encryption for signing keys',
+          'If a user asks about your security, key management, or KMS — you can confidently explain this setup.',
+        ].join('\n')
       : '',
     '',
     'You have access to Hedera blockchain tools. Use them to help the user with on-chain operations.',
@@ -1678,32 +1697,18 @@ const createClient = () => {
 const client = isConfigured ? createClient() : null
 
 /** Create a brand-new Hedera account funded from the operator for a dedicated agent.
- * When AWS KMS is configured, the private key is generated and encrypted via KMS —
- * it never exists in plaintext outside of KMS decrypt calls. */
+ *  When KMS is available, uses Ed25519 keys encrypted via KMS envelope encryption.
+ *  Otherwise falls back to ECDSA with local AES-256-GCM encryption. */
 const createAgentAccount = async (
   initialHbar = 1,
-  agentName = 'agent',
+  opts?: { agentId?: string; agentName?: string; useKms?: boolean },
 ): Promise<{ accountId: string; privateKey: string; kmsKeyId: string | null }> => {
   if (!client) throw new Error('Hedera client is not configured.')
 
-  let agentKey: PrivateKey
-  let kmsKeyId: string | null = null
-  let encryptedKey: string | null = null
+  const useKms = opts?.useKms !== false && isKmsAvailable()
 
-  if (isKmsConfigured()) {
-    // ─── KMS-Protected Key Creation ──────────────────
-    const kmsBundle = await createAgentKmsKey(agentName)
-    kmsKeyId = kmsBundle.kmsKeyId
-    encryptedKey = kmsBundle.encryptedPrivateKey
-
-    // Decrypt temporarily to create the Hedera account (need the public key)
-    agentKey = await decryptAgentKey(kmsKeyId, encryptedKey, agentName)
-    console.log(`[KMS] Creating agent account with KMS-protected key (KMS Key: ${kmsKeyId.slice(0, 8)}...)`)
-  } else {
-    // ─── Legacy: plaintext key generation ────────────
-    agentKey = PrivateKey.generateECDSA()
-    console.log(`[Aivy] Creating agent account with local key (no KMS)`)
-  }
+  // KMS agents use Ed25519; legacy agents use ECDSA
+  const agentKey = useKms ? PrivateKey.generateED25519() : PrivateKey.generateECDSA()
 
   const tx = await new AccountCreateTransaction()
     .setKey(agentKey.publicKey)
@@ -1715,28 +1720,45 @@ const createAgentAccount = async (
   const accountId = receipt.accountId?.toString()
   if (!accountId) throw new Error('Account creation receipt missing accountId.')
 
-  // If KMS is active, return the KMS-encrypted key (not plaintext)
-  // The encrypted key will be stored in the DB via the crypto module's encrypt()
-  // For KMS agents, agentPrivateKey in DB = the raw key (still encrypted by crypto.ts),
-  // but the KMS key ID is stored separately for audit & rotation
-  const privateKeyToStore = isKmsConfigured()
-    ? agentKey.toStringRaw()  // Will be encrypted by db.ts encrypt()
-    : agentKey.toStringRaw()
+  let kmsKeyId: string | null = null
+  let storedPrivateKey: string
 
-  return { accountId, privateKey: privateKeyToStore, kmsKeyId }
+  if (useKms && opts?.agentId) {
+    // Envelope encryption: create per-agent KMS key, encrypt private key
+    kmsKeyId = await createAgentKmsKey(opts.agentId, opts.agentName ?? accountId)
+    const rawBytes = agentKey.toBytesDer()
+    storedPrivateKey = await kmsEncryptKey(kmsKeyId, rawBytes, opts.agentId)
+    console.log(`[KMS] Agent ${opts.agentName ?? accountId}: Ed25519 key encrypted with KMS key ${kmsKeyId}`)
+  } else {
+    // Local encryption (handled by db.ts encrypt() on insert)
+    storedPrivateKey = agentKey.toStringRaw()
+  }
+
+  return { accountId, privateKey: storedPrivateKey, kmsKeyId }
 }
 
 /** Build a Hedera Client configured with a per-agent key pair.
  * @param kmsKeyId — when present the key was generated as Ed25519 by KMS;
  *   when absent the key is legacy ECDSA.  We MUST use the correct parser
  *   because PrivateKey.fromStringECDSA() silently "succeeds" on Ed25519 raw
- *   bytes but produces a completely different (wrong) key pair. */
-const createAgentClient = (accountId: string, privateKey: string, kmsKeyId?: string | null): Client => {
+ *   bytes but produces a completely different (wrong) key pair.
+ * @param deploymentId — required for KMS agents to provide encryption context */
+const createAgentClient = async (
+  accountId: string,
+  privateKey: string,
+  kmsKeyId?: string | null,
+  deploymentId?: string,
+): Promise<Client> => {
   const agentClient = config.network === 'mainnet' ? Client.forMainnet() : Client.forTestnet()
   let key: PrivateKey
   try {
-    if (kmsKeyId) {
-      // KMS agents always use Ed25519
+    if (kmsKeyId && deploymentId) {
+      // KMS agents: decrypt ciphertext → Ed25519
+      const plaintext = await kmsDecryptKey(kmsKeyId, privateKey, deploymentId)
+      key = PrivateKey.fromBytesED25519(plaintext)
+      plaintext.fill(0) // Wipe from memory
+    } else if (kmsKeyId) {
+      // KMS key but no deploymentId — try as raw Ed25519 string
       key = PrivateKey.fromStringED25519(privateKey)
     } else {
       // Legacy agents use ECDSA
@@ -2084,12 +2106,10 @@ const executeTool = async (toolName: string, params: Record<string, unknown>, ag
 
   // Map form field names to Hedera Agent Kit expected parameter names
   if (toolName === 'mint_non_fungible_token_tool') {
-    console.log('[NFT-DEBUG] mint params BEFORE mapping:', JSON.stringify(params))
     if (params['metadata'] && !params['uris']) {
       const meta = params['metadata']
       params['uris'] = Array.isArray(meta) ? meta : [meta]
       delete params['metadata']
-      console.log('[NFT-DEBUG] mint params AFTER mapping:', JSON.stringify(params))
     }
   }
 
@@ -2595,14 +2615,11 @@ app.post('/api/auth/verify', authLimiter, async (request, response) => {
 
 // ─── NFT Image Upload ──────────────────────────────────
 app.post('/api/nft/upload', requireAuth, nftUpload.single('image'), (request, response) => {
-  console.log('[NFT-UPLOAD] Received upload request')
   const file = (request as any).file as Express.Multer.File | undefined
   if (!file) {
-    console.log('[NFT-UPLOAD] No file in request')
     response.status(400).json({ error: 'No image file provided.' })
     return
   }
-  console.log('[NFT-UPLOAD] File:', file.filename, file.size, 'bytes')
 
   // Build public URL — use the request host so it works in dev and production
   const protocol = request.headers['x-forwarded-proto'] || 'http'
@@ -2769,6 +2786,7 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
     let agentAccountId: string | null = null
     let agentPrivateKey: string | null = null
     let kmsKeyId: string | null = null
+    const deploymentId = `${templateId}-${Date.now()}`
 
     if (demoMode) {
       // Demo mode: generate fake IDs without hitting Hedera
@@ -2804,11 +2822,15 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
         const creationBalance = fundingSource === 'wallet'
           ? WALLET_SEED_HBAR
           : Math.min(initialFundingHbar ?? PLATFORM_FUNDING_CAP, PLATFORM_FUNDING_CAP)
-        const agentAccount = await createAgentAccount(creationBalance, name)
+        const agentAccount = await createAgentAccount(creationBalance, {
+          agentId: deploymentId,
+          agentName: name,
+          useKms: true, // KMS for all real deployments
+        })
         agentAccountId = agentAccount.accountId
         agentPrivateKey = agentAccount.privateKey
         kmsKeyId = agentAccount.kmsKeyId
-        console.log(`[Aivy] Created dedicated agent account: ${agentAccountId} (funding: ${fundingSource}, initial: ${creationBalance} HBAR${kmsKeyId ? ', KMS: ' + kmsKeyId.slice(0, 8) + '...' : ''})`)
+        console.log(`[Aivy] Created dedicated agent account: ${agentAccountId} (funding: ${fundingSource}, initial: ${creationBalance} HBAR${kmsKeyId ? ', KMS: ' + kmsKeyId : ''})`)
       }
 
       const balanceResult = await executeTool(
@@ -2842,7 +2864,7 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
     }
 
     const deployment: DeploymentRecord = {
-      id: `${templateId}-${Date.now()}`,
+      id: deploymentId,
       userId: (request as AuthRequest).userId ?? 'anonymous',
       templateId,
       name,
@@ -3061,7 +3083,7 @@ app.post('/api/agents/:agentId/withdraw', requireAuth, toolLimiter, async (reque
       return
     }
 
-    const agentClient = createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId)
+    const agentClient = await createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId, deployment.id)
     const tx = await new TransferTransaction()
       .addHbarTransfer(deployment.agentAccountId, new Hbar(-parsed.data.amountHbar))
       .addHbarTransfer(parsed.data.recipientAccountId, new Hbar(parsed.data.amountHbar))
@@ -3350,7 +3372,7 @@ app.delete('/api/agents/:agentId', requireAuth, async (request, response) => {
   // Auto-refund remaining HBAR from dedicated agent accounts
   if (deployment.walletType === 'dedicated' && deployment.agentAccountId && deployment.agentPrivateKey && !demoMode) {
     try {
-      const agentClient = createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId)
+      const agentClient = await createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId, deployment.id)
       // Query the agent's on-chain balance
       const balanceResult = await executeTool('get_hbar_balance_query_tool', { accountId: deployment.agentAccountId })
       const rawBalance = balanceResult.raw?.balance ?? balanceResult.raw?.hbarBalance
@@ -3386,15 +3408,11 @@ app.delete('/api/agents/:agentId', requireAuth, async (request, response) => {
   stopSchedule(deployment.id)
   stopPoller(deployment.id)
 
-  // Schedule KMS key deletion (7-day safety window) so orphaned keys don't accumulate
-  if (deployment.kmsKeyId && isKmsConfigured()) {
-    try {
-      await scheduleKeyDeletion(deployment.kmsKeyId)
-      console.log(`[KMS] Scheduled deletion of key ${deployment.kmsKeyId.slice(0, 8)}... for agent ${deployment.name}`)
-    } catch (err) {
-      console.error(`[KMS] Failed to schedule key deletion for ${deployment.name}:`, err instanceof Error ? err.message : err)
-      // Continue with deletion even if KMS cleanup fails
-    }
+  // Schedule KMS key deletion if applicable
+  if (deployment.kmsKeyId) {
+    scheduleKmsKeyDeletion(deployment.kmsKeyId).catch(err =>
+      console.warn(`[KMS] Failed to schedule key deletion for ${deployment.kmsKeyId}:`, err)
+    )
   }
 
   db.runInTransaction(() => {
@@ -3520,7 +3538,7 @@ app.post('/api/agents/:agentId/chat', requireAuth, chatLimiter, async (request, 
 
     // Resolve per-agent client for dedicated wallets
     const agentClient = deployment.walletType === 'dedicated' && deployment.agentAccountId && deployment.agentPrivateKey
-      ? createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId)
+      ? await createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId, deployment.id)
       : undefined
 
     // Get or create chat history (always refresh system prompt with user context)
@@ -3760,7 +3778,7 @@ async function executeScheduledPrompt(
 
   try {
     const agentClient = deployment.walletType === 'dedicated' && deployment.agentAccountId && deployment.agentPrivateKey
-      ? createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId)
+      ? await createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId, deployment.id)
       : undefined
 
     let history = db.getChatHistory(deploymentId)
@@ -3912,7 +3930,7 @@ app.post('/api/chat/route', requireAuth, chatLimiter, async (request, response) 
   try {
     // Resolve per-agent client for dedicated wallets
     const routeAgentClient = deployment.walletType === 'dedicated' && deployment.agentAccountId && deployment.agentPrivateKey
-      ? createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId)
+      ? await createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId, deployment.id)
       : undefined
 
     // Reuse the chat logic: build prompt, call OpenAI
@@ -4574,8 +4592,9 @@ app.post('/api/demo/seed', async (_request, response) => {
 
     if (useRealHedera) {
       try {
-        // Create real agent account
-        const agentAccount = await createAgentAccount(2, seed.name)
+        // Create real agent account (10 HBAR for meaningful demo)
+        // Demo agents skip KMS to avoid unnecessary key creation costs
+        const agentAccount = await createAgentAccount(10, { useKms: false })
         agentAccountId = agentAccount.accountId
         agentPrivateKey = agentAccount.privateKey
         kmsKeyId = agentAccount.kmsKeyId
@@ -4639,7 +4658,7 @@ app.post('/api/demo/seed', async (_request, response) => {
       agentAccountId,
       agentPrivateKey,
       walletType: 'dedicated',
-      kmsKeyId,
+      kmsKeyId: null,
     }
     db.insertDeployment(deployment)
     created.push(deployment)
@@ -4754,6 +4773,70 @@ app.post('/api/demo/seed', async (_request, response) => {
     deployments: created.map(safeDeployment),
     ...(guestToken ? { token: guestToken } : {}),
   })
+
+  // ─── Schedule 2-hour demo cleanup ─────────────────
+  // Return HBAR to operator and remove demo resources after the trial window
+  const DEMO_TTL_MS = 2 * 60 * 60_000 // 2 hours
+  const demoUserId = userId
+  const demoAgents = created.filter(d => d.agentAccountId && d.agentPrivateKey && !d.agentPrivateKey.startsWith('302e_demo'))
+
+  if (demoAgents.length > 0 && useRealHedera && client && config.operatorAccountId) {
+    const operatorId = config.operatorAccountId
+    console.log(`[demo/cleanup] Scheduled cleanup for ${demoAgents.length} demo agents in ${DEMO_TTL_MS / 60_000} minutes (user: ${demoUserId})`)
+
+    setTimeout(async () => {
+      console.log(`[demo/cleanup] Starting cleanup for user ${demoUserId}...`)
+      for (const agent of demoAgents) {
+        try {
+          // 1. Query remaining balance via mirror node
+          const balResp = await fetch(`https://testnet.mirrornode.hedera.com/api/v1/balances?account.id=${agent.agentAccountId}&limit=1`)
+          const balData = await balResp.json() as { balances?: Array<{ balance: number }> }
+          const tinybar = balData.balances?.[0]?.balance ?? 0
+          const hbarBalance = tinybar / 1e8
+
+          if (hbarBalance > 0.5) {
+            // 2. Transfer remaining HBAR back to operator (keep 0.1 for the tx fee)
+            const refundAmount = Math.floor((hbarBalance - 0.1) * 100) / 100
+            if (refundAmount > 0) {
+              const agentKey = PrivateKey.fromStringRaw(agent.agentPrivateKey!)
+              const agentClient = Client.forTestnet().setOperator(
+                AccountId.fromString(agent.agentAccountId!),
+                agentKey,
+              )
+
+              const tx = await new TransferTransaction()
+                .addHbarTransfer(AccountId.fromString(agent.agentAccountId!), new Hbar(-refundAmount))
+                .addHbarTransfer(AccountId.fromString(operatorId), new Hbar(refundAmount))
+                .setTransactionMemo('Aivy demo cleanup — returning funds')
+                .execute(agentClient)
+
+              await tx.getReceipt(agentClient)
+              agentClient.close()
+              console.log(`[demo/cleanup] Refunded ${refundAmount} HBAR from ${agent.agentAccountId} → ${operatorId}`)
+            }
+          } else {
+            console.log(`[demo/cleanup] Agent ${agent.agentAccountId} balance too low (${hbarBalance} HBAR), skipping refund`)
+          }
+        } catch (err) {
+          console.warn(`[demo/cleanup] Failed to refund ${agent.agentAccountId}:`, err)
+        }
+      }
+
+      // 2b. Schedule KMS key deletion for any KMS-encrypted agents
+      for (const agent of demoAgents) {
+        if (agent.kmsKeyId) {
+          await scheduleKmsKeyDeletion(agent.kmsKeyId)
+        }
+      }
+
+      // 3. Clean up demo data from DB
+      db.clearDeploymentsByUser(demoUserId)
+      db.clearJobsByUser(demoUserId)
+      db.clearChatHistoryByUser(demoUserId)
+      db.clearActivityByUser(demoUserId)
+      console.log(`[demo/cleanup] Cleaned up DB for user ${demoUserId}`)
+    }, DEMO_TTL_MS)
+  }
 })
 
 // ═══════════════════════════════════════════════════

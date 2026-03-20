@@ -198,11 +198,15 @@ export default function AgentSprite({ agent, isSelected, isActive, isMoving, bob
       )}
 
       <span className="sprite-portrait">
+        {isWorking && <span className="portrait-aura" />}
         <SpriteAnimation name={agent.name} paused={isPaused} />
       </span>
 
       <span className="sprite-name" title={agent.name}>{agent.name.split(' ')[0]}</span>
-      <span className="sprite-status">{statusMeta[agent.status].label}</span>
+      <span className="sprite-status">
+        <span className="status-dot" />
+        {statusMeta[agent.status].label}
+      </span>
 
       {isSelected && agent.walletType === 'dedicated' && agent.agentAccountId && onFund && (
         <span
@@ -220,11 +224,18 @@ export default function AgentSprite({ agent, isSelected, isActive, isMoving, bob
           <span className="sparkle s1" />
           <span className="sparkle s2" />
           <span className="sparkle s3" />
+          <span className="sparkle s4" />
+          <span className="sparkle s5" />
         </>
       )}
 
-      {/* Activity overlay — pulsing ring when executing a tool */}
-      {isActive && <span className="activity-ring" />}
+      {/* Activity overlay — double pulsing ring when executing a tool */}
+      {isActive && (
+        <>
+          <span className="activity-ring" />
+          <span className="activity-ring activity-ring--delayed" />
+        </>
+      )}
     </button>
   )
 }

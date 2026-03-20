@@ -1,4 +1,4 @@
-import { type CSSProperties, useState, useEffect, useMemo, useRef } from 'react'
+import { type CSSProperties, useState, useEffect, useRef, useMemo } from 'react'
 import { templates, roomCards } from '../data'
 import { getSpriteSheet, ensureSpritesLoaded, agentNameToSpriteType } from '../sprites/generateSprites'
 import './Landing.css'
@@ -15,7 +15,6 @@ const walkConfigs = [
   { walkClass: 'walk-yr', bubble: 'Token minted!' },
   { walkClass: 'walk-cc', bubble: 'Audit logged on-chain' },
   { walkClass: 'walk-gr', bubble: 'Proposal submitted' },
-  { walkClass: 'walk-bk', bubble: 'Sentiment: Bullish' },
 ]
 
 /* Inter-agent data transfers with source/dest room centers
@@ -213,6 +212,380 @@ function LandingSprite({ name }: { name: string }) {
   )
 }
 
+/* ─── Deploy Loading Overlay ──────────────────────── */
+
+/* Each phase has a different pixel art character + theme color */
+type DeployPhase = {
+  label: string
+  steps: { text: string; dur: number }[]   // dur = ms this step takes
+  color: string
+  character: 'key' | 'shield' | 'vault' | 'robot' | 'rocket'
+}
+
+const deployPhases: DeployPhase[] = [
+  {
+    label: 'Key Generation',
+    color: '#f3c35f',
+    character: 'key',
+    steps: [
+      { text: 'Initialising entropy pool', dur: 2500 },
+      { text: 'Generating Ed25519 key pair', dur: 3500 },
+      { text: 'Deriving public key hash', dur: 2000 },
+    ],
+  },
+  {
+    label: 'KMS Encryption',
+    color: '#ff9a3c',
+    character: 'shield',
+    steps: [
+      { text: 'Connecting to AWS KMS', dur: 2500 },
+      { text: 'Creating symmetric data key', dur: 3000 },
+      { text: 'Encrypting private key (AES-256-GCM)', dur: 3500 },
+      { text: 'Wiping plaintext from memory', dur: 1500 },
+    ],
+  },
+  {
+    label: 'Hedera Account',
+    color: '#5ad6b5',
+    character: 'vault',
+    steps: [
+      { text: 'Creating Hedera account (ED25519)', dur: 3000 },
+      { text: 'Funding account via operator wallet', dur: 3500 },
+      { text: 'Verifying on-chain balance', dur: 2000 },
+    ],
+  },
+  {
+    label: 'Smart Contract',
+    color: '#4ecdc4',
+    character: 'robot',
+    steps: [
+      { text: 'Compiling AivyVault.sol', dur: 3000 },
+      { text: 'Deploying vault to Hedera EVM', dur: 4000 },
+      { text: 'Setting spending cap & guardrails', dur: 2500 },
+    ],
+  },
+  {
+    label: 'Launch',
+    color: '#7f95d1',
+    character: 'rocket',
+    steps: [
+      { text: 'Provisioning AI agent runtime', dur: 3000 },
+      { text: 'Binding tools & capabilities', dur: 2500 },
+      { text: 'Entering the office...', dur: 2000 },
+    ],
+  },
+]
+
+// Pre-calculate absolute start times for each step
+const allSteps: { text: string; phaseIdx: number; absStart: number; dur: number }[] = []
+let cursor = 0
+deployPhases.forEach((phase, pi) => {
+  phase.steps.forEach((s) => {
+    allSteps.push({ text: s.text, phaseIdx: pi, absStart: cursor, dur: s.dur })
+    cursor += s.dur
+  })
+})
+const TOTAL_DEPLOY_MS = cursor   // ≈ 42s
+
+/* ─── Pixel Art Characters (SVG) ────────────────── */
+function PixelKey() {
+  return (
+    <svg className="deploy-char" viewBox="0 0 48 56" width="64" height="74">
+      {/* Key head (ring) */}
+      <rect x={16} y={2} width={16} height={4} fill="#f3c35f"/>
+      <rect x={12} y={6} width={4} height={12} fill="#f3c35f"/>
+      <rect x={32} y={6} width={4} height={12} fill="#f3c35f"/>
+      <rect x={16} y={18} width={16} height={4} fill="#f3c35f"/>
+      <rect x={20} y={6} width={8} height={4} fill="#1a1a2e"/>
+      <rect x={16} y={10} width={4} height={4} fill="#1a1a2e"/>
+      <rect x={28} y={10} width={4} height={4} fill="#1a1a2e"/>
+      <rect x={20} y={14} width={8} height={4} fill="#1a1a2e"/>
+      {/* Key shaft */}
+      <rect x={22} y={22} width={4} height={20} fill="#e8b830"/>
+      {/* Key teeth */}
+      <rect x={26} y={34} width={6} height={4} fill="#f3c35f"/>
+      <rect x={26} y={40} width={8} height={4} fill="#f3c35f"/>
+      {/* Sparkles */}
+      <rect x={8} y={4} width={2} height={2} fill="#fff" opacity={0.6} className="deploy-sparkle-1"/>
+      <rect x={38} y={8} width={2} height={2} fill="#fff" opacity={0.6} className="deploy-sparkle-2"/>
+    </svg>
+  )
+}
+
+function PixelShield() {
+  return (
+    <svg className="deploy-char" viewBox="0 0 48 56" width="64" height="74">
+      {/* Shield top */}
+      <rect x={8} y={4} width={32} height={4} fill="#ff9a3c"/>
+      <rect x={4} y={8} width={40} height={4} fill="#ff9a3c"/>
+      <rect x={4} y={12} width={40} height={4} fill="#e8872e"/>
+      {/* Shield body */}
+      <rect x={4} y={16} width={40} height={4} fill="#ff9a3c"/>
+      <rect x={8} y={20} width={32} height={4} fill="#e8872e"/>
+      <rect x={8} y={24} width={32} height={4} fill="#ff9a3c"/>
+      <rect x={12} y={28} width={24} height={4} fill="#e8872e"/>
+      <rect x={16} y={32} width={16} height={4} fill="#ff9a3c"/>
+      <rect x={20} y={36} width={8} height={4} fill="#e8872e"/>
+      <rect x={22} y={40} width={4} height={4} fill="#ff9a3c"/>
+      {/* Lock symbol */}
+      <rect x={20} y={14} width={8} height={4} fill="#1a1a2e"/>
+      <rect x={18} y={18} width={12} height={8} fill="#1a1a2e"/>
+      <rect x={22} y={20} width={4} height={4} fill="#f3c35f" className="deploy-lock-glow"/>
+      {/* AWS sparkle */}
+      <rect x={2} y={8} width={2} height={2} fill="#ff9a3c" opacity={0.5} className="deploy-sparkle-1"/>
+      <rect x={44} y={12} width={2} height={2} fill="#ff9a3c" opacity={0.5} className="deploy-sparkle-2"/>
+    </svg>
+  )
+}
+
+function PixelVault() {
+  return (
+    <svg className="deploy-char" viewBox="0 0 48 56" width="64" height="74">
+      {/* Hexagon shape (Hedera-inspired) */}
+      <rect x={16} y={2} width={16} height={4} fill="#5ad6b5"/>
+      <rect x={8} y={6} width={32} height={4} fill="#5ad6b5"/>
+      <rect x={4} y={10} width={40} height={4} fill="#4cc4a4"/>
+      <rect x={4} y={14} width={40} height={4} fill="#5ad6b5"/>
+      <rect x={4} y={18} width={40} height={4} fill="#4cc4a4"/>
+      {/* H for Hedera */}
+      <rect x={16} y={10} width={4} height={12} fill="#1a1a2e"/>
+      <rect x={28} y={10} width={4} height={12} fill="#1a1a2e"/>
+      <rect x={20} y={14} width={8} height={4} fill="#1a1a2e"/>
+      {/* Bottom hex */}
+      <rect x={4} y={22} width={40} height={4} fill="#5ad6b5"/>
+      <rect x={8} y={26} width={32} height={4} fill="#4cc4a4"/>
+      <rect x={16} y={30} width={16} height={4} fill="#5ad6b5"/>
+      {/* Vault door / coins */}
+      <rect x={14} y={36} width={8} height={8} fill="#f3c35f" className="deploy-coin-1"/>
+      <rect x={26} y={36} width={8} height={8} fill="#f3c35f" className="deploy-coin-2"/>
+      <rect x={20} y={42} width={8} height={8} fill="#e8b830" className="deploy-coin-3"/>
+      {/* Sparkle */}
+      <rect x={2} y={6} width={2} height={2} fill="#5ad6b5" opacity={0.6} className="deploy-sparkle-1"/>
+    </svg>
+  )
+}
+
+function PixelRobot() {
+  return (
+    <svg className="deploy-char" viewBox="0 0 48 56" width="64" height="74">
+      {/* Antenna */}
+      <rect x={22} y={0} width={4} height={6} fill="#4ecdc4"/>
+      <rect x={20} y={0} width={8} height={2} fill="#5ad6b5" className="deploy-sparkle-1"/>
+      {/* Head */}
+      <rect x={10} y={6} width={28} height={4} fill="#2a3a5c"/>
+      <rect x={8} y={10} width={32} height={4} fill="#354a6e"/>
+      <rect x={8} y={14} width={32} height={4} fill="#2a3a5c"/>
+      <rect x={10} y={18} width={28} height={4} fill="#354a6e"/>
+      {/* Eyes */}
+      <rect x={14} y={12} width={6} height={6} fill="#4ecdc4" className="deploy-eye-blink"/>
+      <rect x={28} y={12} width={6} height={6} fill="#4ecdc4" className="deploy-eye-blink"/>
+      {/* Mouth */}
+      <rect x={18} y={18} width={12} height={2} fill="#4ecdc4" opacity={0.5}/>
+      {/* Body */}
+      <rect x={12} y={24} width={24} height={4} fill="#1e2d4a"/>
+      <rect x={10} y={28} width={28} height={4} fill="#253755"/>
+      <rect x={10} y={32} width={28} height={4} fill="#1e2d4a"/>
+      <rect x={12} y={36} width={24} height={4} fill="#253755"/>
+      {/* Core */}
+      <rect x={20} y={28} width={8} height={8} fill="#f3c35f" className="deploy-lock-glow"/>
+      {/* Arms */}
+      <rect x={4} y={26} width={6} height={4} fill="#354a6e" className="deploy-arm-l"/>
+      <rect x={38} y={26} width={6} height={4} fill="#354a6e" className="deploy-arm-r"/>
+      {/* Legs */}
+      <rect x={14} y={40} width={6} height={6} fill="#2a3a5c"/>
+      <rect x={28} y={40} width={6} height={6} fill="#2a3a5c"/>
+      {/* Feet */}
+      <rect x={12} y={46} width={10} height={4} fill="#354a6e"/>
+      <rect x={26} y={46} width={10} height={4} fill="#354a6e"/>
+    </svg>
+  )
+}
+
+function PixelRocket() {
+  return (
+    <svg className="deploy-char deploy-char--rocket" viewBox="0 0 48 64" width="64" height="86">
+      {/* Nose cone */}
+      <rect x={22} y={0} width={4} height={4} fill="#e0e0e0"/>
+      <rect x={18} y={4} width={12} height={4} fill="#c8c8c8"/>
+      <rect x={16} y={8} width={16} height={4} fill="#e0e0e0"/>
+      {/* Body */}
+      <rect x={14} y={12} width={20} height={4} fill="#d0d0d0"/>
+      <rect x={14} y={16} width={20} height={4} fill="#e0e0e0"/>
+      <rect x={14} y={20} width={20} height={4} fill="#d0d0d0"/>
+      <rect x={14} y={24} width={20} height={4} fill="#c8c8c8"/>
+      <rect x={14} y={28} width={20} height={4} fill="#d0d0d0"/>
+      {/* Window */}
+      <rect x={20} y={14} width={8} height={8} fill="#4ecdc4" rx={1}/>
+      <rect x={22} y={16} width={4} height={4} fill="#7eeae0"/>
+      {/* Aivy logo on body */}
+      <rect x={22} y={26} width={4} height={4} fill="#5ad6b5"/>
+      {/* Fins */}
+      <rect x={8} y={24} width={6} height={4} fill="#7f95d1"/>
+      <rect x={6} y={28} width={8} height={4} fill="#6b82bd"/>
+      <rect x={34} y={24} width={6} height={4} fill="#7f95d1"/>
+      <rect x={34} y={28} width={8} height={4} fill="#6b82bd"/>
+      {/* Engine */}
+      <rect x={16} y={32} width={16} height={4} fill="#8a8a9a"/>
+      {/* Flames! */}
+      <rect x={18} y={36} width={4} height={4} fill="#f3c35f" className="deploy-flame-1"/>
+      <rect x={22} y={36} width={4} height={6} fill="#ff9a3c" className="deploy-flame-2"/>
+      <rect x={26} y={36} width={4} height={4} fill="#f3c35f" className="deploy-flame-3"/>
+      <rect x={20} y={42} width={4} height={6} fill="#f25f5c" className="deploy-flame-4"/>
+      <rect x={24} y={44} width={4} height={6} fill="#ff9a3c" className="deploy-flame-5"/>
+      <rect x={18} y={48} width={4} height={4} fill="#f25f5c" opacity={0.6} className="deploy-flame-6"/>
+      <rect x={26} y={48} width={4} height={4} fill="#f25f5c" opacity={0.6} className="deploy-flame-6"/>
+      {/* Exhaust particles */}
+      <rect x={16} y={52} width={2} height={2} fill="#f3c35f" opacity={0.3} className="deploy-sparkle-1"/>
+      <rect x={30} y={54} width={2} height={2} fill="#ff9a3c" opacity={0.3} className="deploy-sparkle-2"/>
+    </svg>
+  )
+}
+
+const charComponents: Record<DeployPhase['character'], () => JSX.Element> = {
+  key: PixelKey,
+  shield: PixelShield,
+  vault: PixelVault,
+  robot: PixelRobot,
+  rocket: PixelRocket,
+}
+
+function DeployLoadingOverlay() {
+  const [activeStepIdx, setActiveStepIdx] = useState(0)
+  const [dots, setDots] = useState('')
+  const [elapsed, setElapsed] = useState(0)
+  const [charVisible, setCharVisible] = useState(true)
+
+  // Advance steps based on elapsed time
+  useEffect(() => {
+    const start = Date.now()
+    const iv = setInterval(() => {
+      const ms = Date.now() - start
+      setElapsed(ms)
+      // Find which step we're on
+      for (let i = allSteps.length - 1; i >= 0; i--) {
+        if (ms >= allSteps[i].absStart) {
+          setActiveStepIdx(i)
+          break
+        }
+      }
+    }, 100)
+    return () => clearInterval(iv)
+  }, [])
+
+  // Animate character swap: fade out → swap → fade in
+  const currentPhaseIdx = allSteps[activeStepIdx]?.phaseIdx ?? 0
+  const prevPhaseRef = useRef(0)
+  useEffect(() => {
+    if (currentPhaseIdx !== prevPhaseRef.current) {
+      setCharVisible(false)
+      const t = setTimeout(() => {
+        prevPhaseRef.current = currentPhaseIdx
+        setCharVisible(true)
+      }, 300)
+      return () => clearTimeout(t)
+    }
+  }, [currentPhaseIdx])
+
+  const displayPhaseIdx = charVisible ? currentPhaseIdx : prevPhaseRef.current
+  const phase = deployPhases[displayPhaseIdx]
+  const CharComponent = charComponents[phase.character]
+
+  // Dots animation
+  useEffect(() => {
+    const iv = setInterval(() => setDots(d => d.length >= 3 ? '' : d + '.'), 400)
+    return () => clearInterval(iv)
+  }, [])
+
+  // Steps visible: show steps for current phase only
+  const phaseSteps = allSteps.filter(s => s.phaseIdx === currentPhaseIdx)
+  const phaseFirstIdx = allSteps.findIndex(s => s.phaseIdx === currentPhaseIdx)
+  const progress = Math.min(100, (elapsed / TOTAL_DEPLOY_MS) * 100)
+
+  return (
+    <div className="deploy-loading-overlay">
+      <div className="deploy-grid-bg" />
+
+      {/* Floating pixel particles */}
+      {Array.from({ length: 16 }).map((_, i) => (
+        <span
+          key={i}
+          className="deploy-pixel-particle"
+          style={{
+            '--pp-x': `${5 + Math.random() * 90}%`,
+            '--pp-dur': `${3 + Math.random() * 4}s`,
+            '--pp-delay': `${Math.random() * 3}s`,
+            '--pp-size': `${3 + Math.random() * 5}px`,
+            '--pp-color': ['#5ad6b5', '#f3c35f', '#4ecdc4', '#ff9a3c', '#7f95d1', '#f25f5c'][i % 6],
+          } as CSSProperties}
+        />
+      ))}
+
+      <div className="deploy-loading-content">
+        {/* Phase indicator pills */}
+        <div className="deploy-phases-bar">
+          {deployPhases.map((p, i) => (
+            <div
+              className={`deploy-phase-pill ${i < currentPhaseIdx ? 'is-done' : i === currentPhaseIdx ? 'is-active' : ''}`}
+              key={p.label}
+              style={{ '--phase-color': p.color } as CSSProperties}
+            >
+              <span className="deploy-phase-dot" />
+              <span className="deploy-phase-label">{p.label}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Character area with swap animation */}
+        <div className="deploy-char-stage" style={{ '--phase-color': phase.color } as CSSProperties}>
+          <div className={`deploy-char-wrap ${charVisible ? 'is-visible' : 'is-hidden'}`}>
+            <CharComponent />
+          </div>
+          {/* Orbiting particles around character */}
+          <div className="deploy-orbit deploy-orbit--1" style={{ '--orb-color': phase.color } as CSSProperties} />
+          <div className="deploy-orbit deploy-orbit--2" style={{ '--orb-color': phase.color } as CSSProperties} />
+          <div className="deploy-orbit deploy-orbit--3" style={{ '--orb-color': phase.color } as CSSProperties} />
+        </div>
+
+        <h2 className="deploy-loading-title" style={{ color: phase.color }}>
+          {phase.label}{dots}
+        </h2>
+
+        {/* Step progress for current phase */}
+        <div className="deploy-steps">
+          {phaseSteps.map((step, i) => {
+            const globalIdx = phaseFirstIdx + i
+            const isDone = activeStepIdx > globalIdx
+            const isActive = activeStepIdx === globalIdx
+            return (
+              <div
+                className={`deploy-step ${isDone ? 'is-done' : isActive ? 'is-active' : ''}`}
+                key={step.text}
+                style={{ '--phase-color': phase.color } as CSSProperties}
+              >
+                <span className="deploy-step-icon">{isDone ? '✓' : isActive ? '▸' : '○'}</span>
+                <span className="deploy-step-text">{step.text}</span>
+                {isActive && <span className="deploy-step-spinner" style={{ borderTopColor: phase.color } as CSSProperties} />}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Progress bar */}
+        <div className="deploy-progress-bar">
+          <div
+            className="deploy-progress-fill"
+            style={{
+              width: `${progress}%`,
+              background: `linear-gradient(90deg, ${deployPhases[0].color}, ${phase.color})`,
+            }}
+          />
+          <span className="deploy-progress-pct">{Math.round(progress)}%</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Landing({ onEnter, onTryDemo, onAbout }: LandingProps) {
   const [demoLoading, setDemoLoading] = useState(false)
 
@@ -223,6 +596,10 @@ export default function Landing({ onEnter, onTryDemo, onAbout }: LandingProps) {
     } finally {
       setDemoLoading(false)
     }
+  }
+
+  if (demoLoading) {
+    return <DeployLoadingOverlay />
   }
 
   return (

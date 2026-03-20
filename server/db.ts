@@ -157,11 +157,16 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 `)
 
-// ─── Migrations (add columns to existing DBs) ───────
+// ─── Migrations (safe column additions for existing DBs) ──
 try {
-  db.exec(`ALTER TABLE deployments ADD COLUMN kms_key_id TEXT`)
-} catch {
-  // Column already exists — ignore
+  const cols = db.prepare("PRAGMA table_info(deployments)").all() as { name: string }[]
+  const colNames = new Set(cols.map(c => c.name))
+  if (!colNames.has('kms_key_id')) {
+    db.exec('ALTER TABLE deployments ADD COLUMN kms_key_id TEXT')
+    console.log('[Aivy] Migration: added kms_key_id column to deployments')
+  }
+} catch (err) {
+  console.error('[Aivy] Migration error:', err)
 }
 
 // ─── Types ───────────────────────────────────────────
@@ -233,13 +238,18 @@ export type DeploymentRecord = {
 function rowToDeployment(row: DeploymentRow): DeploymentRecord {
   let privateKey: string | null = null
   if (row.agent_private_key_encrypted) {
-    try {
-      privateKey = isEncrypted(row.agent_private_key_encrypted)
-        ? decrypt(row.agent_private_key_encrypted)
-        : row.agent_private_key_encrypted
-    } catch {
-      console.error(`[Aivy] Failed to decrypt agent private key for deployment ${row.id}. Check MASTER_ENCRYPTION_KEY.`)
-      privateKey = null
+    if (row.kms_key_id) {
+      // KMS-encrypted key: stored as base64 ciphertext, decrypted at runtime via KMS
+      privateKey = row.agent_private_key_encrypted
+    } else {
+      try {
+        privateKey = isEncrypted(row.agent_private_key_encrypted)
+          ? decrypt(row.agent_private_key_encrypted)
+          : row.agent_private_key_encrypted
+      } catch {
+        console.error(`[Aivy] Failed to decrypt agent private key for deployment ${row.id}. Check MASTER_ENCRYPTION_KEY.`)
+        privateKey = null
+      }
     }
   }
 
@@ -264,7 +274,7 @@ function rowToDeployment(row: DeploymentRow): DeploymentRecord {
     agentAccountId: row.agent_account_id,
     agentPrivateKey: privateKey,
     walletType: row.wallet_type,
-    kmsKeyId: row.kms_key_id,
+    kmsKeyId: row.kms_key_id ?? null,
   }
 }
 
@@ -350,7 +360,10 @@ export function getAllDeployments(): DeploymentRecord[] {
 }
 
 export function insertDeployment(record: DeploymentRecord): void {
-  const encryptedKey = record.agentPrivateKey ? encrypt(record.agentPrivateKey) : null
+  // KMS keys are already encrypted (base64 ciphertext) — don't double-encrypt
+  const encryptedKey = record.agentPrivateKey
+    ? (record.kmsKeyId ? record.agentPrivateKey : encrypt(record.agentPrivateKey))
+    : null
   stmtInsertDeployment.run({
     id: record.id,
     user_id: record.userId,
@@ -377,7 +390,9 @@ export function insertDeployment(record: DeploymentRecord): void {
 }
 
 export function updateDeployment(record: DeploymentRecord): void {
-  const encryptedKey = record.agentPrivateKey ? encrypt(record.agentPrivateKey) : null
+  const encryptedKey = record.agentPrivateKey
+    ? (record.kmsKeyId ? record.agentPrivateKey : encrypt(record.agentPrivateKey))
+    : null
   stmtUpdateDeployment.run({
     id: record.id,
     status: record.status,
@@ -1052,7 +1067,7 @@ export function migrateFromJson(): void {
           agentAccountId: (record.agentAccountId as string) ?? null,
           agentPrivateKey: (record.agentPrivateKey as string) ?? null,
           walletType: String(record.walletType ?? 'platform'),
-          kmsKeyId: null,
+          kmsKeyId: (record.kmsKeyId as string) ?? null,
         }
 
         insertDeployment(deployment)

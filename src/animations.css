@@ -59,6 +59,19 @@
   100% { opacity: 0; transform: translate(2px, -28px) scale(0); }
 }
 
+/* Extra sparkle arcs — wider, more dramatic */
+@keyframes sparkle-4 {
+  0% { opacity: 0; transform: translate(0, 0) scale(0) rotate(45deg); }
+  25% { opacity: 0.9; transform: translate(-18px, -14px) scale(1) rotate(45deg); }
+  100% { opacity: 0; transform: translate(-24px, -26px) scale(0) rotate(90deg); }
+}
+
+@keyframes sparkle-5 {
+  0% { opacity: 0; transform: translate(0, 0) scale(0) rotate(45deg); }
+  25% { opacity: 0.9; transform: translate(16px, -16px) scale(1) rotate(45deg); }
+  100% { opacity: 0; transform: translate(22px, -30px) scale(0) rotate(90deg); }
+}
+
 /* ─── Speech Bubble ────────────────────────────────── */
 @keyframes bubble-pop {
   0% {
