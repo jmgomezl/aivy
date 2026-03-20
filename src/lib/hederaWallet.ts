@@ -219,9 +219,11 @@ export const connectHederaWallet = async (): Promise<WalletSessionInfo> => {
     }
 
     // ── Open pairing modal ───────────────────────────────────
-    // HashPack extension auto-detects the WC relay — no need for a separate
-    // connectToExtension() call which causes duplicate pairing dialogs.
-    if (!settled) {
+    // Wait briefly for init() auto-reconnection to settle before
+    // opening a new pairing modal — prevents duplicate HashPack prompts.
+    await new Promise((r) => setTimeout(r, 800))
+
+    if (!settled && hashconnect.connectedAccountIds.length === 0) {
       void hashconnect.openPairingModal(
         'dark', '#08111d', '#61d6bf', '#f3c35f', '18px',
       )

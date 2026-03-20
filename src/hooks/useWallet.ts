@@ -103,11 +103,13 @@ export function useWallet() {
     return getSessionAccountId()
   }, [wallet])
 
-  /** Log out: clear JWT token without needing HashConnect */
+  /** Log out: clear JWT token without needing HashConnect.
+   *  Bumps authVersion so App re-fetches live data (now empty)
+   *  instead of hard-reloading to the landing page. */
   const logout = () => {
     clearToken()
     setWallet({ status: 'idle' })
-    window.location.reload()
+    setAuthVersion((v) => v + 1)
   }
 
   return { wallet, connectWallet, disconnectWallet, sessionAccountId, logout, authError, authVersion }
