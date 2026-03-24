@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import express from 'express'
-import { createAgentKmsKey, decryptAgentKey, isKmsConfigured, rotateAgentKey, getKeyInfo, encryptExistingKey, scheduleKeyDeletion } from './kms.js'
+import { isKmsAvailable, createAgentKmsKey, kmsEncryptKey, kmsDecryptKey, scheduleKmsKeyDeletion } from './kms.js'
 import solc from 'solc'
 import OpenAI from 'openai'
 import {
@@ -63,19 +63,8 @@ import { bonzoPlugin } from '@bonzofinancelabs/hak-bonzo-plugin'
 import { ethers } from 'ethers'
 import axios from 'axios'
 
-// Patch the global axios.create to inject x-api-key for SaucerSwap instances.
-// The hak-saucerswap-plugin calls axios.create({ baseURL: "https://api.saucerswap.finance" })
-// and the API now requires an API key via x-api-key header.
-if (process.env.SAUCERSWAP_API_KEY) {
-  const _origCreate = axios.create.bind(axios)
-  axios.create = function patchedCreate(config?: Parameters<typeof _origCreate>[0]) {
-    const instance = _origCreate(config)
-    if (config?.baseURL?.includes('saucerswap.finance')) {
-      instance.defaults.headers.common['x-api-key'] = process.env.SAUCERSWAP_API_KEY!
-    }
-    return instance
-  } as typeof axios.create
-}
+// SaucerSwap HTTP client placeholder — initialised after dotenv.config()
+let saucerswapHttpClient: ReturnType<typeof axios.create> | undefined
 
 const CoinCapHederaPlugin = {
   name: 'CoinCapHederaPlugin',
@@ -144,6 +133,17 @@ dotenv.config()
 initMasterKey()
 initAuth()
 
+// SaucerSwap API key: create a pre-configured axios instance with the key.
+// Must be after dotenv.config() so the env var is available.
+if (process.env.SAUCERSWAP_API_KEY) {
+  saucerswapHttpClient = axios.create({
+    baseURL: 'https://api.saucerswap.finance',
+    timeout: 10_000,
+    headers: { 'x-api-key': process.env.SAUCERSWAP_API_KEY },
+  })
+  console.log('[SaucerSwap] API key configured')
+}
+
 // ─── Global Error Handlers ─────────────────────────
 process.on('unhandledRejection', (reason) => {
   console.error('[Aivy] Unhandled rejection:', reason)
@@ -187,6 +187,28 @@ const capabilityGroupIds = [
 // Third-party plugin tool names — always use .method (the snake_case identifier
 // that HederaAIToolkit registers internally), never .name (display label with spaces)
 const sanitizeToolName = (n: string) => n.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '')
+// Patch SaucerSwap tools to inject API key via context before each execution.
+// The plugin's ESM-isolated axios doesn't share our interceptors, so we wrap
+// each tool's execute to inject a pre-configured http client through context.
+if (saucerswapHttpClient) {
+  for (const tool of saucerswapPlugin.tools()) {
+    const origExecute = tool.execute
+    tool.execute = async (client: unknown, context: Record<string, unknown>, params: unknown) => {
+      const patchedContext = {
+        ...context,
+        config: {
+          ...(context?.config as Record<string, unknown> ?? {}),
+          saucerswap: {
+            ...((context?.config as Record<string, unknown>)?.saucerswap as Record<string, unknown> ?? {}),
+            http: saucerswapHttpClient,
+          },
+        },
+      }
+      return origExecute(client, patchedContext, params)
+    }
+  }
+  console.log('[SaucerSwap] API key injected into all SaucerSwap tools')
+}
 const saucerswapTools = saucerswapPlugin.tools().map((t: { method: string }) => t.method)
 const pythTools = pythPlugin.tools().map((t: { method: string }) => t.method)
 const memejobTools = memejobPlugin.tools().map((t: { method: string }) => t.method)
@@ -438,6 +460,7 @@ function buildAgentSystemPrompt(deployment: DeploymentRecord, userAccountId?: st
       : '',
     '',
     'You have access to Hedera blockchain tools. Use them to help the user with on-chain operations.',
+    'IMPORTANT: ALWAYS call the balance tool for every balance query — NEVER reuse a previous balance result from conversation history. Balances change constantly due to transactions and funding.',
     'Always explain what you are doing and why. If a tool execution fails, explain the error clearly.',
     '',
     '## SPENDING CAP ENFORCEMENT',
@@ -1713,7 +1736,7 @@ const createAgentAccount = async (
   const tx = await new AccountCreateTransaction()
     .setKey(agentKey.publicKey)
     .setInitialBalance(new Hbar(initialHbar))
-    .setTransactionMemo(kmsKeyId ? 'Aivy agent account (KMS-protected)' : 'Aivy agent account')
+    .setTransactionMemo(useKms ? 'Aivy agent account (KMS-protected)' : 'Aivy agent account')
     .execute(client)
 
   const receipt = await tx.getReceipt(client)
@@ -2647,74 +2670,30 @@ app.post('/api/nft/upload', requireAuth, nftUpload.single('image'), (request, re
 // ─── KMS Key Management Endpoints ─────────────────────
 app.get('/api/kms/status', requireAuth, (_request, response) => {
   response.json({
-    enabled: isKmsConfigured(),
+    enabled: isKmsAvailable(),
     region: process.env.AWS_REGION || 'us-east-1',
     provider: 'AWS KMS',
   })
 })
 
-app.post('/api/agents/:id/kms/rotate', requireAuth, async (request, response) => {
-  try {
-    const deployment = db.getDeployment(request.params.id)
-    if (!deployment) {
-      response.status(404).json({ error: 'Agent not found' })
-      return
-    }
-    if (!deployment.kmsKeyId) {
-      response.status(400).json({ error: 'Agent does not use KMS key management' })
-      return
-    }
-    if (!isKmsConfigured()) {
-      response.status(503).json({ error: 'AWS KMS is not configured' })
-      return
-    }
-
-    // Rotate the key: generate new Hedera keypair, encrypt with same KMS key
-    const rotated = await rotateAgentKey(deployment.kmsKeyId, deployment.name)
-
-    // Update the on-chain account key (requires the old key to sign)
-    // For now, just update the DB with the new encrypted key
-    deployment.agentPrivateKey = rotated.newPrivateKey.toStringRaw()
-    db.updateDeployment(deployment)
-
-    console.log(`[KMS] Key rotated for agent ${deployment.name} (${deployment.id})`)
-    response.json({
-      success: true,
-      message: `Key rotated for agent ${deployment.name}`,
-      kmsKeyId: deployment.kmsKeyId,
-      newPublicKey: rotated.publicKey.slice(0, 40) + '...',
-    })
-  } catch (error) {
-    console.error('[KMS] Rotation error:', error)
-    response.status(500).json({ error: error instanceof Error ? error.message : 'Key rotation failed' })
-  }
+app.post('/api/agents/:id/kms/rotate', requireAuth, async (_request, response) => {
+  // Key rotation not yet implemented in this version
+  response.status(501).json({ error: 'Key rotation is not yet available.' })
 })
 
 app.get('/api/agents/:id/kms/info', requireAuth, async (request, response) => {
-  try {
-    const deployment = db.getDeployment(request.params.id)
-    if (!deployment) {
-      response.status(404).json({ error: 'Agent not found' })
-      return
-    }
-    if (!deployment.kmsKeyId) {
-      response.json({ enabled: false, message: 'Agent uses local key management' })
-      return
-    }
-
-    const info = await getKeyInfo(deployment.kmsKeyId)
-    response.json({
-      enabled: true,
-      keyId: info.keyId,
-      arn: info.arn,
-      createdAt: info.creationDate,
-      description: info.description,
-      provider: 'AWS KMS',
-      region: process.env.AWS_REGION || 'us-east-1',
-    })
-  } catch (error) {
-    response.status(500).json({ error: error instanceof Error ? error.message : 'Failed to get KMS info' })
+  const deployment = db.getDeployment(request.params.id)
+  if (!deployment) { response.status(404).json({ error: 'Agent not found' }); return }
+  if (!deployment.kmsKeyId) {
+    response.json({ enabled: false, message: 'Agent uses local key management' })
+    return
   }
+  response.json({
+    enabled: true,
+    keyId: deployment.kmsKeyId,
+    provider: 'AWS KMS',
+    region: process.env.AWS_REGION || 'us-east-1',
+  })
 })
 
 app.get('/api/live', readLimiter, async (request, response) => {
@@ -3421,6 +3400,24 @@ app.delete('/api/agents/:agentId', requireAuth, async (request, response) => {
     pushActivity(`${deployment.name} destroyed and removed from the Aivy floor.${refundMsg}`, 'system')
   })
   response.json({ ok: true, refundedHbar, refundTxId })
+})
+
+// GET chat history — used by ChatPanel to restore conversation after OmniBar routing
+app.get('/api/agents/:agentId/chat', requireAuth, readLimiter, (request, response) => {
+  const deployment = db.getDeployment(request.params.agentId)
+  if (!deployment) { response.status(404).json({ error: 'Deployment not found.' }); return }
+  if (!assertAgentOwnership(deployment, request)) { response.status(403).json({ error: 'You do not own this agent.' }); return }
+  const history = db.getChatHistory(deployment.id)
+  // Filter to user + assistant messages only (skip system/tool internals)
+  const messages = history
+    .filter((m) => m.role === 'user' || (m.role === 'assistant' && m.content))
+    .map((m, i) => ({
+      id: `history-${i}`,
+      role: m.role,
+      content: m.content ?? '',
+      timestamp: new Date().toISOString(),
+    }))
+  response.json({ messages })
 })
 
 app.delete('/api/agents/:agentId/chat', requireAuth, (request, response) => {
@@ -4798,10 +4795,11 @@ app.post('/api/demo/seed', async (_request, response) => {
             // 2. Transfer remaining HBAR back to operator (keep 0.1 for the tx fee)
             const refundAmount = Math.floor((hbarBalance - 0.1) * 100) / 100
             if (refundAmount > 0) {
-              const agentKey = PrivateKey.fromStringRaw(agent.agentPrivateKey!)
-              const agentClient = Client.forTestnet().setOperator(
-                AccountId.fromString(agent.agentAccountId!),
-                agentKey,
+              const agentClient = await createAgentClient(
+                agent.agentAccountId!,
+                agent.agentPrivateKey!,
+                agent.kmsKeyId,
+                agent.id,
               )
 
               const tx = await new TransferTransaction()
@@ -5354,6 +5352,18 @@ function gracefulShutdown(signal: string): void {
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
 process.on('SIGINT', () => gracefulShutdown('SIGINT'))
+
+// ─── Health Check ─────────────────────────────────────
+app.get('/api/health', (_req, res) => {
+  res.json({
+    status: 'ok',
+    uptime: Math.floor(process.uptime()),
+    mode: isConfigured ? 'live' : demoMode ? 'demo' : 'unconfigured',
+    kms: isKmsAvailable(),
+    agents: db.getAllDeployments().length,
+    timestamp: new Date().toISOString(),
+  })
+})
 
 app.listen(config.port, () => {
   const mode = isConfigured ? 'live testnet mode' : demoMode ? 'demo mode (no Hedera keys)' : 'config required mode'

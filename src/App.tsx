@@ -430,7 +430,8 @@ function App() {
       await live.refreshLive()
       setShowOnboarding(false)
       setSelectedAgentId('')
-      setView('office')
+      // NOTE: Don't setView('office') here — Landing controls the transition
+      // after the deploy animation completes via onEnter callback
       setDemoCoachActive(true)
     } catch {
       live.setServerMessage('Could not start demo. Make sure the backend server is running.')

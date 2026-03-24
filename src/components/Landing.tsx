@@ -228,9 +228,8 @@ const deployPhases: DeployPhase[] = [
     color: '#f3c35f',
     character: 'key',
     steps: [
-      { text: 'Initialising entropy pool', dur: 2500 },
-      { text: 'Generating Ed25519 key pair', dur: 3500 },
-      { text: 'Deriving public key hash', dur: 2000 },
+      { text: 'Generating Ed25519 key pair', dur: 4500 },
+      { text: 'Deriving public key hash', dur: 3500 },
     ],
   },
   {
@@ -238,10 +237,8 @@ const deployPhases: DeployPhase[] = [
     color: '#ff9a3c',
     character: 'shield',
     steps: [
-      { text: 'Connecting to AWS KMS', dur: 2500 },
-      { text: 'Creating symmetric data key', dur: 3000 },
-      { text: 'Encrypting private key (AES-256-GCM)', dur: 3500 },
-      { text: 'Wiping plaintext from memory', dur: 1500 },
+      { text: 'Encrypting private key (AES-256-GCM)', dur: 5000 },
+      { text: 'Wiping plaintext from memory', dur: 3000 },
     ],
   },
   {
@@ -249,9 +246,8 @@ const deployPhases: DeployPhase[] = [
     color: '#5ad6b5',
     character: 'vault',
     steps: [
-      { text: 'Creating Hedera account (ED25519)', dur: 3000 },
-      { text: 'Funding account via operator wallet', dur: 3500 },
-      { text: 'Verifying on-chain balance', dur: 2000 },
+      { text: 'Creating Hedera account', dur: 5500 },
+      { text: 'Funding & verifying balance', dur: 4000 },
     ],
   },
   {
@@ -259,9 +255,8 @@ const deployPhases: DeployPhase[] = [
     color: '#4ecdc4',
     character: 'robot',
     steps: [
-      { text: 'Compiling AivyVault.sol', dur: 3000 },
-      { text: 'Deploying vault to Hedera EVM', dur: 4000 },
-      { text: 'Setting spending cap & guardrails', dur: 2500 },
+      { text: 'Deploying AivyVault.sol', dur: 5500 },
+      { text: 'Setting spending cap', dur: 3500 },
     ],
   },
   {
@@ -269,9 +264,8 @@ const deployPhases: DeployPhase[] = [
     color: '#7f95d1',
     character: 'rocket',
     steps: [
-      { text: 'Provisioning AI agent runtime', dur: 3000 },
-      { text: 'Binding tools & capabilities', dur: 2500 },
-      { text: 'Entering the office...', dur: 2000 },
+      { text: 'Binding tools & capabilities', dur: 4000 },
+      { text: 'Entering the office...', dur: 3000 },
     ],
   },
 ]
@@ -455,13 +449,12 @@ function DeployLoadingOverlay() {
   const [elapsed, setElapsed] = useState(0)
   const [charVisible, setCharVisible] = useState(true)
 
-  // Advance steps based on elapsed time
+  // Advance steps based on elapsed time — single pass through all phases
   useEffect(() => {
     const start = Date.now()
     const iv = setInterval(() => {
       const ms = Date.now() - start
       setElapsed(ms)
-      // Find which step we're on
       for (let i = allSteps.length - 1; i >= 0; i--) {
         if (ms >= allSteps[i].absStart) {
           setActiveStepIdx(i)
@@ -591,10 +584,12 @@ export default function Landing({ onEnter, onTryDemo, onAbout }: LandingProps) {
 
   const handleDemo = async () => {
     setDemoLoading(true)
+    const minAnimation = new Promise(resolve => setTimeout(resolve, TOTAL_DEPLOY_MS + 400))
     try {
-      await onTryDemo()
+      await Promise.all([onTryDemo(), minAnimation])
     } finally {
       setDemoLoading(false)
+      onEnter()
     }
   }
 
