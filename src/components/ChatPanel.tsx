@@ -73,16 +73,15 @@ const placeholderHints: Record<string, string> = {
 }
 
 export default function ChatPanel({ agent, userAccountId, onAgentReply, onRefresh, onMarkActive }: ChatPanelProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>(() => [
-    {
-      id: 'welcome',
-      role: 'assistant',
-      content:
-        welcomeMessages[agent.templateId] ??
-        "Hi! I'm your AI agent. Ask me anything about Hedera.",
-      timestamp: new Date().toISOString(),
-    },
-  ])
+  const welcomeMsg: ChatMessage = {
+    id: 'welcome',
+    role: 'assistant',
+    content:
+      welcomeMessages[agent.templateId] ??
+      "Hi! I'm your AI agent. Ask me anything about Hedera.",
+    timestamp: new Date().toISOString(),
+  }
+  const [messages, setMessages] = useState<ChatMessage[]>([welcomeMsg])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [pendingImage, setPendingImage] = useState<File | null>(null)
@@ -91,6 +90,21 @@ export default function ChatPanel({ agent, userAccountId, onAgentReply, onRefres
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Load existing chat history on mount (e.g. after OmniBar routing)
+  useEffect(() => {
+    let cancelled = false
+    requestJson<{ messages: ChatMessage[] }>(`/api/agents/${agent.id}/chat`)
+      .then((data) => {
+        if (cancelled) return
+        if (data.messages && data.messages.length > 0) {
+          setMessages([welcomeMsg, ...data.messages])
+        }
+      })
+      .catch(() => { /* ignore - use welcome message only */ })
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent.id])
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -188,7 +202,7 @@ export default function ChatPanel({ agent, userAccountId, onAgentReply, onRefres
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message: messageToSend,
-            ...(userAccountId ? { userAccountId } : {}),
+            ...(userAccountId && /^0\.0\.\d+$/.test(userAccountId) ? { userAccountId } : {}),
           }),
         },
       )
@@ -266,7 +280,12 @@ export default function ChatPanel({ agent, userAccountId, onAgentReply, onRefres
     } catch { /* ignore */ }
   }, [agent.id, agent.templateId])
 
-  const allPrompts = suggestedPrompts[agent.templateId] ?? suggestedPrompts['treasury-sentinel']
+  const basePrompts = suggestedPrompts[agent.templateId] ?? suggestedPrompts['treasury-sentinel']
+  // Add SaucerSwap prompts when the agent has the capability
+  const saucerPrompts = agent.capabilityGroups?.includes('saucerswap')
+    ? ['Show top SaucerSwap pools', 'Get SAUCE token price', 'Quote swap 100 HBAR to USDC']
+    : []
+  const allPrompts = [...basePrompts, ...saucerPrompts]
   // Filter out prompts the user already sent
   const usedTexts = new Set(messages.filter((m) => m.role === 'user').map((m) => m.content))
   const promptChips = allPrompts.filter((p) => !usedTexts.has(p))

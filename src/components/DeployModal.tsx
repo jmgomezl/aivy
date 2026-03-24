@@ -6,7 +6,7 @@ import { useWalletContext } from '../contexts/WalletContext'
 import './DeployModal.css'
 
 // Plugin groups that require external API keys and are not yet functional
-const comingSoonGroups = new Set<CapabilityGroupId>(['saucerswap', 'memejob', 'coincap'])
+const comingSoonGroups = new Set<CapabilityGroupId>(['memejob', 'coincap'])
 
 type DeployModalProps = {
   templateId: string
