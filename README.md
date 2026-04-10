@@ -350,6 +350,20 @@ Branch protection is enabled — all changes go through PRs.
 
 ---
 
+## Community Contributions
+
+> **Note:** These contributions were made during the APEX Hackathon development period. No changes have been made to the deployed Aivy platform (aivylabs.xyz) after the hackathon submission deadline.
+
+During the development of Aivy, we identified issues and contributed back to the Hedera ecosystem tools we depend on:
+
+- **[hashgraph/hedera-agent-kit-js#614](https://github.com/hashgraph/hedera-agent-kit-js/issues/614)** — Reported stale balance reads from `AccountBalanceQuery` on testnet after `CryptoTransfer`. The SDK returns outdated balances for several minutes while the mirror node reflects the correct value immediately. Suggested a mirror node fallback for balance queries.
+
+- **SaucerSwap Plugin** — Identified that the `hak-saucerswap-plugin` does not support API key authentication, which is now required by the SaucerSwap REST API. Built a workaround and documented the fix for an upstream PR.
+
+We are active Hedera Developer Ambassadors and Agent Kit plugin contributors, and we plan to continue contributing to the ecosystem beyond this hackathon.
+
+---
+
 ## Team
 
 Built by **AivyLabs** for the Hedera APEX Hackathon 2026.
