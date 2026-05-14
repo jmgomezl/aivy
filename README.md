@@ -354,6 +354,8 @@ Branch protection is enabled — all changes go through PRs.
 
 Built by **AivyLabs** for the Hedera APEX Hackathon 2026.
 
+🏆 **3rd Place — AI & Agents category** · [APEX Hackathon Winners](https://hedera.com/blog/these-are-the-winners-of-the-hello-future-apex-hackathon/)
+
 ## License
 
 MIT
