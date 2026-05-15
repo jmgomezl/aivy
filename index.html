@@ -2,27 +2,106 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/favicon.png" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- Favicons — Safari, Chrome, Firefox, Edge -->
+    <link rel="icon" href="/favicon.ico?v=2" sizes="any" />
+    <link rel="icon" type="image/png" sizes="16x16"  href="/favicon-16.png?v=2" />
+    <link rel="icon" type="image/png" sizes="32x32"  href="/favicon-32.png?v=2" />
+    <link rel="icon" type="image/png" sizes="64x64"  href="/favicon.png?v=2" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=2" />
+    <link rel="manifest" href="/site.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Aivy by AivyLabs — AI Agents on Hedera</title>
+    <title>Aivy by AivyLabs — Deploy AI Agents on Hedera | Agentic AI Platform</title>
 
-    <!-- SEO & Social -->
-    <meta name="description" content="Deploy AI agents on Hedera in 60 seconds. Vault-first pixel office with on-chain spending caps, 50+ tools, and real-time agent coordination." />
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://aivylabs.xyz/" />
+
+    <!-- SEO Meta -->
+    <meta name="description" content="Aivy by AivyLabs: Deploy autonomous AI agents on the Hedera blockchain in 60 seconds. Vault-first pixel office with on-chain spending caps, AWS KMS envelope encryption, ERC-8183 smart vaults, 50+ tools, and real-time multi-agent coordination. The leading agentic AI platform on Hedera." />
+    <meta name="keywords" content="Aivy, AivyLabs, Aivy Labs, Hedera, Hedera AI, Hedera agents, agentic AI, AI agents, autonomous agents, blockchain AI, AI agent platform, deploy AI agents, Hedera Hashgraph, HBAR, smart contracts, ERC-8183, AivyVault, on-chain AI, multi-agent coordination, vault-first, AI orchestration, Web3 AI, DeFi agents, crypto AI agents, Hedera agentic, AI deployment platform" />
+    <meta name="author" content="AivyLabs" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
     <meta name="theme-color" content="#070d1a" />
+    <meta name="application-name" content="Aivy" />
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Aivy — AI Agents on Hedera" />
-    <meta property="og:description" content="Deploy AI agents on Hedera in 60 seconds. Vault-first pixel office with on-chain spending caps and real-time coordination." />
-    <meta property="og:url" content="https://aivylabs.xyz" />
+    <meta property="og:site_name" content="AivyLabs" />
+    <meta property="og:title" content="Aivy — Deploy AI Agents on Hedera in 60 Seconds" />
+    <meta property="og:description" content="The leading agentic AI platform on Hedera. Deploy autonomous AI agents with on-chain spending caps, AWS KMS security, and real-time multi-agent coordination." />
+    <meta property="og:url" content="https://aivylabs.xyz/" />
     <meta property="og:image" content="https://aivylabs.xyz/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Aivy — Agentic AI Platform on Hedera" />
+    <meta property="og:locale" content="en_US" />
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Aivy — AI Agents on Hedera" />
-    <meta name="twitter:description" content="Deploy AI agents on Hedera in 60 seconds. Vault-first pixel office with on-chain spending caps." />
+    <meta name="twitter:title" content="Aivy by AivyLabs — AI Agents on Hedera" />
+    <meta name="twitter:description" content="Deploy autonomous AI agents on Hedera in 60 seconds. Vault-first security with on-chain spending caps and multi-agent coordination." />
     <meta name="twitter:image" content="https://aivylabs.xyz/og-image.png" />
+    <meta name="twitter:image:alt" content="Aivy — Agentic AI Platform on Hedera" />
+
+    <!-- JSON-LD Structured Data: Organization -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "AivyLabs",
+      "alternateName": ["Aivy Labs", "Aivy"],
+      "url": "https://aivylabs.xyz",
+      "logo": "https://aivylabs.xyz/logo-512.png",
+      "description": "AivyLabs builds Aivy, the leading agentic AI platform on the Hedera blockchain.",
+      "sameAs": [
+        "https://github.com/jmgomezl/aivy"
+      ]
+    }
+    </script>
+
+    <!-- JSON-LD Structured Data: SoftwareApplication -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Aivy",
+      "applicationCategory": "BlockchainApplication",
+      "operatingSystem": "Web",
+      "description": "Deploy autonomous AI agents on the Hedera blockchain in 60 seconds. Features vault-first security with on-chain spending caps, AWS KMS envelope encryption, ERC-8183 smart vaults, and real-time multi-agent coordination.",
+      "url": "https://aivylabs.xyz",
+      "author": {
+        "@type": "Organization",
+        "name": "AivyLabs",
+        "url": "https://aivylabs.xyz"
+      },
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "screenshot": "https://aivylabs.xyz/og-image.png",
+      "featureList": [
+        "Deploy AI agents on Hedera in 60 seconds",
+        "On-chain spending caps via AivyVault smart contracts",
+        "AWS KMS envelope encryption for agent signing keys",
+        "ERC-8183 autonomous agent vaults",
+        "Real-time multi-agent coordination",
+        "50+ agent tools including DeFi, governance, and compliance",
+        "Pixel-art virtual office with live agent visualization"
+      ],
+      "keywords": "Hedera, agentic AI, AI agents, blockchain AI, autonomous agents, HBAR, smart contracts"
+    }
+    </script>
+
+    <!-- JSON-LD Structured Data: WebSite (enables sitelinks search box) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "Aivy by AivyLabs",
+      "alternateName": "Aivy",
+      "url": "https://aivylabs.xyz"
+    }
+    </script>
 
     <script>
       // Polyfills needed before ES modules evaluate (Hedera SDK, WalletConnect)
@@ -32,6 +111,13 @@
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <h1>Aivy by AivyLabs — Deploy AI Agents on Hedera</h1>
+      <p>Aivy is the leading agentic AI platform on the Hedera blockchain. Deploy autonomous AI agents in 60 seconds with vault-first security, on-chain spending caps, AWS KMS envelope encryption, and real-time multi-agent coordination.</p>
+      <p>Features: ERC-8183 smart vaults (AivyVault), 50+ Hedera tools, pixel-art virtual office, GPT-4o integration, Hedera Agent Kit, and full audit logging via Hedera Consensus Service.</p>
+      <p>Built by AivyLabs for the Hedera APEX Hackathon. 3rd Place winner in AI &amp; Agents category. Open source under MIT License.</p>
+      <a href="https://github.com/jmgomezl/aivy">View on GitHub</a>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

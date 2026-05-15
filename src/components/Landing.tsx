@@ -762,7 +762,7 @@ export default function Landing({ onEnter, onTryDemo, onAbout }: LandingProps) {
         </div>
 
         <p className="landing-powered" style={{ animationDelay: '0.6s' }}>
-          Powered by <strong>Hedera Agent Kit</strong> &middot; Built for APEX Hackathon &middot; <strong>AivyLabs</strong>
+          Powered by <strong>Hedera Agent Kit</strong> &middot; 🏆 <a href="https://hedera.com/blog/these-are-the-winners-of-the-hello-future-apex-hackathon/" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit' }}>3rd Place · APEX Hackathon AI &amp; Agents</a> &middot; <strong>AivyLabs</strong>
           {onAbout && (
             <>
               {' '}&middot;{' '}
