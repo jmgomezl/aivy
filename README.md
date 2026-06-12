@@ -27,6 +27,17 @@
 
 ---
 
+## 🎛 Aivy Studio
+
+**[studio.aivylabs.xyz](https://studio.aivylabs.xyz)** — the visual canvas for orchestrating multi-agent workflows on Hedera. Think **n8n, but for AI agents**: drag, connect, and activate agent workflows as node graphs.
+
+- **Visual workflows**: agents, HCS-10 communication channels, HTS escrow, smart-contract commitments, and hardware-wallet approval gates as connectable nodes
+- **Live on-chain**: activate a flow and watch nodes light up as real Hedera events stream in via mirror node
+- **Template library**: ships with [Kickoff.bot](https://kickoff.bot) — a P2P agent-driven negotiation marketplace — as the first production template; load it, modify it, or use it as a starting point for your own agent workflows
+- **Source**: [github.com/jmgomezl/aivy-studio](https://github.com/jmgomezl/aivy-studio)
+
+Aivy deploys and secures the agents; Aivy Studio composes them into workflows.
+
 ![Aivy Landing](docs/screenshots/landing.png)
 
 ## Why Aivy?
