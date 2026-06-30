@@ -233,13 +233,18 @@ export type DeploymentRecord = {
 function rowToDeployment(row: DeploymentRow): DeploymentRecord {
   let privateKey: string | null = null
   if (row.agent_private_key_encrypted) {
-    try {
-      privateKey = isEncrypted(row.agent_private_key_encrypted)
-        ? decrypt(row.agent_private_key_encrypted)
-        : row.agent_private_key_encrypted
-    } catch {
-      console.error(`[Aivy] Failed to decrypt agent private key for deployment ${row.id}. Check MASTER_ENCRYPTION_KEY.`)
-      privateKey = null
+    if (row.kms_key_id) {
+      // KMS agent: stored value is raw KMS ciphertext (base64) — no AES layer
+      privateKey = row.agent_private_key_encrypted
+    } else {
+      try {
+        privateKey = isEncrypted(row.agent_private_key_encrypted)
+          ? decrypt(row.agent_private_key_encrypted)
+          : row.agent_private_key_encrypted
+      } catch {
+        console.error(`[Aivy] Failed to decrypt agent private key for deployment ${row.id}. Check MASTER_ENCRYPTION_KEY.`)
+        privateKey = null
+      }
     }
   }
 
@@ -350,7 +355,11 @@ export function getAllDeployments(): DeploymentRecord[] {
 }
 
 export function insertDeployment(record: DeploymentRecord): void {
-  const encryptedKey = record.agentPrivateKey ? encrypt(record.agentPrivateKey) : null
+  // KMS agents: store raw KMS ciphertext — no AES layer (plaintext never existed here)
+  // Legacy agents: AES-encrypt the plaintext hex key
+  const encryptedKey = record.agentPrivateKey
+    ? (record.kmsKeyId ? record.agentPrivateKey : encrypt(record.agentPrivateKey))
+    : null
   stmtInsertDeployment.run({
     id: record.id,
     user_id: record.userId,
@@ -377,7 +386,9 @@ export function insertDeployment(record: DeploymentRecord): void {
 }
 
 export function updateDeployment(record: DeploymentRecord): void {
-  const encryptedKey = record.agentPrivateKey ? encrypt(record.agentPrivateKey) : null
+  const encryptedKey = record.agentPrivateKey
+    ? (record.kmsKeyId ? record.agentPrivateKey : encrypt(record.agentPrivateKey))
+    : null
   stmtUpdateDeployment.run({
     id: record.id,
     status: record.status,

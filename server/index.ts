@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import express from 'express'
-import { createAgentKmsKey, decryptAgentKey, isKmsConfigured, rotateAgentKey, getKeyInfo, encryptExistingKey, scheduleKeyDeletion } from './kms.js'
+import { createAgentKmsKey, decryptAgentKey, isKmsConfigured, rotateAgentKey, getKeyInfo, scheduleKeyDeletion } from './kms.js'
 import solc from 'solc'
 import OpenAI from 'openai'
 import {
@@ -1683,6 +1683,7 @@ const client = isConfigured ? createClient() : null
 const createAgentAccount = async (
   initialHbar = 1,
   agentName = 'agent',
+  agentId = `agent-${Date.now()}`,
 ): Promise<{ accountId: string; privateKey: string; kmsKeyId: string | null }> => {
   if (!client) throw new Error('Hedera client is not configured.')
 
@@ -1692,12 +1693,12 @@ const createAgentAccount = async (
 
   if (isKmsConfigured()) {
     // ─── KMS-Protected Key Creation ──────────────────
-    const kmsBundle = await createAgentKmsKey(agentName)
+    const kmsBundle = await createAgentKmsKey(agentName, agentId)
     kmsKeyId = kmsBundle.kmsKeyId
     encryptedKey = kmsBundle.encryptedPrivateKey
 
     // Decrypt temporarily to create the Hedera account (need the public key)
-    agentKey = await decryptAgentKey(kmsKeyId, encryptedKey, agentName)
+    agentKey = await decryptAgentKey(kmsKeyId, encryptedKey, agentId)
     console.log(`[KMS] Creating agent account with KMS-protected key (KMS Key: ${kmsKeyId.slice(0, 8)}...)`)
   } else {
     // ─── Legacy: plaintext key generation ────────────
@@ -1715,13 +1716,11 @@ const createAgentAccount = async (
   const accountId = receipt.accountId?.toString()
   if (!accountId) throw new Error('Account creation receipt missing accountId.')
 
-  // If KMS is active, return the KMS-encrypted key (not plaintext)
-  // The encrypted key will be stored in the DB via the crypto module's encrypt()
-  // For KMS agents, agentPrivateKey in DB = the raw key (still encrypted by crypto.ts),
-  // but the KMS key ID is stored separately for audit & rotation
-  const privateKeyToStore = isKmsConfigured()
-    ? agentKey.toStringRaw()  // Will be encrypted by db.ts encrypt()
-    : agentKey.toStringRaw()
+  // KMS agents: store the KMS ciphertext blob — plaintext never touches disk.
+  // Legacy agents: store the raw hex key (db.ts will AES-encrypt it).
+  const privateKeyToStore = (isKmsConfigured() && encryptedKey)
+    ? encryptedKey            // KMS ciphertext (base64) — stored as-is, no AES layer
+    : agentKey.toStringRaw()  // Legacy: AES-encrypted by db.ts
 
   return { accountId, privateKey: privateKeyToStore, kmsKeyId }
 }
@@ -1752,6 +1751,26 @@ const createAgentClient = (accountId: string, privateKey: string, kmsKeyId?: str
   }
   agentClient.setOperator(accountId, key)
   return agentClient
+}
+
+/**
+ * Resolve a Hedera Client for a deployment, decrypting the agent key via KMS if needed.
+ * Use this everywhere instead of calling createAgentClient directly.
+ */
+const createAgentClientAsync = async (deployment: {
+  agentAccountId: string | null
+  agentPrivateKey: string | null
+  kmsKeyId: string | null
+  id: string
+}): Promise<Client> => {
+  if (!deployment.agentAccountId || !deployment.agentPrivateKey) {
+    throw new Error(`[Aivy] Agent ${deployment.id} has no account or key`)
+  }
+  if (deployment.kmsKeyId) {
+    const privateKey = await decryptAgentKey(deployment.kmsKeyId, deployment.agentPrivateKey, deployment.id)
+    return createAgentClient(deployment.agentAccountId, privateKey.toStringRaw(), deployment.kmsKeyId)
+  }
+  return createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, null)
 }
 
 const compileVault = () => {
@@ -2653,7 +2672,7 @@ app.post('/api/agents/:id/kms/rotate', requireAuth, async (request, response) =>
     }
 
     // Rotate the key: generate new Hedera keypair, encrypt with same KMS key
-    const rotated = await rotateAgentKey(deployment.kmsKeyId, deployment.name)
+    const rotated = await rotateAgentKey(deployment.kmsKeyId, deployment.id)
 
     // Update the on-chain account key (requires the old key to sign)
     // For now, just update the DB with the new encrypted key
@@ -2769,6 +2788,7 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
     let agentAccountId: string | null = null
     let agentPrivateKey: string | null = null
     let kmsKeyId: string | null = null
+    const deploymentId = `${templateId}-${Date.now()}`
 
     if (demoMode) {
       // Demo mode: generate fake IDs without hitting Hedera
@@ -2804,7 +2824,7 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
         const creationBalance = fundingSource === 'wallet'
           ? WALLET_SEED_HBAR
           : Math.min(initialFundingHbar ?? PLATFORM_FUNDING_CAP, PLATFORM_FUNDING_CAP)
-        const agentAccount = await createAgentAccount(creationBalance, name)
+        const agentAccount = await createAgentAccount(creationBalance, name, deploymentId)
         agentAccountId = agentAccount.accountId
         agentPrivateKey = agentAccount.privateKey
         kmsKeyId = agentAccount.kmsKeyId
@@ -2842,7 +2862,7 @@ app.post('/api/deploy', requireAuth, deployLimiter, async (request, response) =>
     }
 
     const deployment: DeploymentRecord = {
-      id: `${templateId}-${Date.now()}`,
+      id: deploymentId,
       userId: (request as AuthRequest).userId ?? 'anonymous',
       templateId,
       name,
@@ -3061,7 +3081,7 @@ app.post('/api/agents/:agentId/withdraw', requireAuth, toolLimiter, async (reque
       return
     }
 
-    const agentClient = createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId)
+    const agentClient = await createAgentClientAsync(deployment)
     const tx = await new TransferTransaction()
       .addHbarTransfer(deployment.agentAccountId, new Hbar(-parsed.data.amountHbar))
       .addHbarTransfer(parsed.data.recipientAccountId, new Hbar(parsed.data.amountHbar))
@@ -3350,7 +3370,7 @@ app.delete('/api/agents/:agentId', requireAuth, async (request, response) => {
   // Auto-refund remaining HBAR from dedicated agent accounts
   if (deployment.walletType === 'dedicated' && deployment.agentAccountId && deployment.agentPrivateKey && !demoMode) {
     try {
-      const agentClient = createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId)
+      const agentClient = await createAgentClientAsync(deployment)
       // Query the agent's on-chain balance
       const balanceResult = await executeTool('get_hbar_balance_query_tool', { accountId: deployment.agentAccountId })
       const rawBalance = balanceResult.raw?.balance ?? balanceResult.raw?.hbarBalance
@@ -3520,7 +3540,7 @@ app.post('/api/agents/:agentId/chat', requireAuth, chatLimiter, async (request, 
 
     // Resolve per-agent client for dedicated wallets
     const agentClient = deployment.walletType === 'dedicated' && deployment.agentAccountId && deployment.agentPrivateKey
-      ? createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId)
+      ? await createAgentClientAsync(deployment)
       : undefined
 
     // Get or create chat history (always refresh system prompt with user context)
@@ -3760,7 +3780,7 @@ async function executeScheduledPrompt(
 
   try {
     const agentClient = deployment.walletType === 'dedicated' && deployment.agentAccountId && deployment.agentPrivateKey
-      ? createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId)
+      ? await createAgentClientAsync(deployment)
       : undefined
 
     let history = db.getChatHistory(deploymentId)
@@ -3912,7 +3932,7 @@ app.post('/api/chat/route', requireAuth, chatLimiter, async (request, response) 
   try {
     // Resolve per-agent client for dedicated wallets
     const routeAgentClient = deployment.walletType === 'dedicated' && deployment.agentAccountId && deployment.agentPrivateKey
-      ? createAgentClient(deployment.agentAccountId, deployment.agentPrivateKey, deployment.kmsKeyId)
+      ? await createAgentClientAsync(deployment)
       : undefined
 
     // Reuse the chat logic: build prompt, call OpenAI
@@ -4248,9 +4268,10 @@ app.get('/api/dashboard', readLimiter, (request, response) => {
     const userId = (request as AuthRequest).userId
     const allItems = db.getAllDeployments()
     // Filter by authenticated user — same as office view for consistency
+    // Unauthenticated / demo users see nothing (matches /api/live behaviour)
     const items = userId && userId !== 'demo' && userId !== 'anonymous'
       ? allItems.filter((d) => d.userId === userId)
-      : allItems
+      : []
 
     const agentStats = items.map(d => ({
       id: d.id,
