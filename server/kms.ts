@@ -93,7 +93,7 @@ export async function getOrCreateSharedKey(): Promise<string> {
     ],
   }))
 
-  sharedKeyId = createResult.KeyMetadata?.KeyId
+  sharedKeyId = createResult.KeyMetadata?.KeyId ?? null
   if (!sharedKeyId) throw new Error('[KMS] Failed to create shared key')
 
   await client.send(new CreateAliasCommand({
