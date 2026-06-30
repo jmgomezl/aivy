@@ -1,16 +1,14 @@
 /**
- * AWS KMS Envelope Encryption for Aivy Agent Keys
+ * AWS KMS Key Management for Hedera Agent Accounts
  *
- * Each agent gets a dedicated KMS symmetric key. The agent's Ed25519
- * private key is encrypted by KMS and stored as ciphertext — the raw
- * key NEVER touches disk.
+ * Architecture:
+ * - ONE shared symmetric KMS key (alias/aivy-agent-keystore) encrypts ALL agent private keys.
+ * - Each agent's 32-byte Ed25519 private key is encrypted directly with KMS Encrypt.
+ * - The KMS ciphertext blob is stored in the DB — plaintext never touches disk.
+ * - EncryptionContext binds each ciphertext to its specific agent ID (AAD).
+ * - Decrypt in memory only; wipe buffers immediately after use.
  *
- * Flow:
- *   1. Create KMS symmetric key (per agent)
- *   2. Generate Ed25519 key pair locally
- *   3. Encrypt private key bytes via KMS EncryptCommand
- *   4. Store only ciphertext + kmsKeyId in DB
- *   5. At signing time: DecryptCommand → sign → Buffer.fill(0)
+ * Cost: ~$1/month for the single shared key (vs $1/month per agent previously).
  */
 
 import {
@@ -18,139 +16,285 @@ import {
   CreateKeyCommand,
   EncryptCommand,
   DecryptCommand,
+  DescribeKeyCommand,
+  EnableKeyRotationCommand,
   ScheduleKeyDeletionCommand,
-  KeySpec,
-  KeyUsageType,
+  ListKeysCommand,
+  CreateAliasCommand,
+  DescribeKeyCommandOutput,
+  type KeyMetadata,
 } from '@aws-sdk/client-kms'
+import { PrivateKey, Transaction } from '@hashgraph/sdk'
 
-// ─── KMS Client (lazy singleton) ─────────────────────
-let _kms: KMSClient | null = null
+// ─── KMS Client Setup ─────────────────────────────────
+let kmsClient: KMSClient | null = null
 
-function getKmsClient(): KMSClient | null {
-  if (_kms) return _kms
-
-  const accessKeyId = process.env.AWS_ACCESS_KEY_ID
-  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY
-  const region = process.env.AWS_REGION || 'us-east-1'
-
-  if (!accessKeyId || !secretAccessKey) {
-    return null // KMS not configured — fall back to local encryption
+function getKmsConfig() {
+  return {
+    region: process.env.AWS_REGION || 'us-east-1',
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
   }
-
-  _kms = new KMSClient({
-    region,
-    credentials: { accessKeyId, secretAccessKey },
-  })
-  return _kms
 }
 
-/** Whether KMS is available (AWS credentials configured) */
-export function isKmsAvailable(): boolean {
-  return getKmsClient() !== null
+export function getKmsClient(): KMSClient {
+  if (!kmsClient) {
+    const cfg = getKmsConfig()
+    if (!cfg.accessKeyId || !cfg.secretAccessKey) {
+      throw new Error('[KMS] AWS credentials not configured. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.')
+    }
+    kmsClient = new KMSClient({
+      region: cfg.region,
+      credentials: {
+        accessKeyId: cfg.accessKeyId,
+        secretAccessKey: cfg.secretAccessKey,
+      },
+    })
+    console.log(`[KMS] Client initialized (region: ${cfg.region})`)
+  }
+  return kmsClient
 }
+
+export function isKmsConfigured(): boolean {
+  const cfg = getKmsConfig()
+  return !!(cfg.accessKeyId && cfg.secretAccessKey)
+}
+
+// ─── Shared Key ────────────────────────────────────────
+const SHARED_KEY_ALIAS = 'alias/aivy-agent-keystore'
+let sharedKeyId: string | null = null
 
 /**
- * Create a dedicated KMS symmetric key for an agent.
- * Returns the KMS Key ID (UUID).
+ * Returns the ID of the single shared Aivy KMS key, creating it if needed.
+ * Result is cached in memory for the lifetime of the process.
  */
-export async function createAgentKmsKey(agentId: string, agentName: string): Promise<string> {
-  const kms = getKmsClient()
-  if (!kms) throw new Error('KMS is not configured. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.')
+export async function getOrCreateSharedKey(): Promise<string> {
+  if (sharedKeyId) return sharedKeyId
 
-  const result = await kms.send(new CreateKeyCommand({
-    KeySpec: KeySpec.SYMMETRIC_DEFAULT,
-    KeyUsage: KeyUsageType.ENCRYPT_DECRYPT,
-    Description: `Aivy agent key: ${agentName} (${agentId})`,
+  const client = getKmsClient()
+
+  // Try to resolve existing alias
+  try {
+    const result = await client.send(new DescribeKeyCommand({ KeyId: SHARED_KEY_ALIAS }))
+    sharedKeyId = result.KeyMetadata!.KeyId!
+    console.log(`[KMS] Using shared key ${sharedKeyId} (${SHARED_KEY_ALIAS})`)
+    return sharedKeyId
+  } catch {
+    // Alias not found — create the key
+  }
+
+  const createResult = await client.send(new CreateKeyCommand({
+    Description: 'Aivy shared agent keystore — encrypts all agent Ed25519 private keys',
+    KeyUsage: 'ENCRYPT_DECRYPT',
+    KeySpec: 'SYMMETRIC_DEFAULT',
     Tags: [
-      { TagKey: 'Platform', TagValue: 'aivy' },
-      { TagKey: 'AgentId', TagValue: agentId },
-      { TagKey: 'AgentName', TagValue: agentName.slice(0, 256) },
+      { TagKey: 'Platform', TagValue: 'Aivy' },
+      { TagKey: 'Purpose', TagValue: 'SharedAgentKeystore' },
     ],
   }))
 
-  const keyId = result.KeyMetadata?.KeyId
-  if (!keyId) throw new Error('KMS CreateKey did not return a KeyId')
+  sharedKeyId = createResult.KeyMetadata?.KeyId
+  if (!sharedKeyId) throw new Error('[KMS] Failed to create shared key')
 
-  console.log(`[KMS] Created symmetric key ${keyId} for agent ${agentName}`)
-  return keyId
+  await client.send(new CreateAliasCommand({
+    AliasName: SHARED_KEY_ALIAS,
+    TargetKeyId: sharedKeyId,
+  }))
+
+  try {
+    await client.send(new EnableKeyRotationCommand({ KeyId: sharedKeyId }))
+  } catch {
+    console.warn('[KMS] Could not enable auto-rotation on shared key')
+  }
+
+  console.log(`[KMS] Created shared key ${sharedKeyId} (${SHARED_KEY_ALIAS})`)
+  return sharedKeyId
+}
+
+// ─── Types ────────────────────────────────────────────
+export type KmsAgentKey = {
+  kmsKeyId: string           // Shared KMS key ID
+  encryptedPrivateKey: string // Base64 KMS ciphertext of the Ed25519 private key
+  publicKey: string          // Hedera public key (DER hex)
+  hederaAccountId?: string
+}
+
+export type KmsKeyInfo = {
+  keyId: string
+  arn: string
+  creationDate: Date
+  enabled: boolean
+  description: string
+  keyRotationEnabled: boolean
+}
+
+// ─── Core Operations ──────────────────────────────────
+
+/**
+ * Create a new KMS-protected agent key using the shared keystore key.
+ *
+ * 1. Resolves the shared KMS key (creates it on first call)
+ * 2. Generates a Hedera Ed25519 keypair
+ * 3. Encrypts the 32-byte private key with KMS (EncryptionContext binds it to agentId)
+ * 4. Returns ciphertext — plaintext key is wiped from memory
+ */
+export async function createAgentKmsKey(agentName: string, agentId: string): Promise<KmsAgentKey> {
+  const client = getKmsClient()
+  const keyId = await getOrCreateSharedKey()
+
+  const hederaPrivateKey = PrivateKey.generateED25519()
+  const hederaPublicKey = hederaPrivateKey.publicKey
+
+  const privateKeyBytes = Buffer.from(hederaPrivateKey.toStringRaw(), 'hex')
+  const encryptResult = await client.send(new EncryptCommand({
+    KeyId: keyId,
+    Plaintext: privateKeyBytes,
+    EncryptionContext: {
+      platform: 'aivy',
+      keyType: 'hedera-ed25519',
+      agentId,
+    },
+  }))
+
+  if (!encryptResult.CiphertextBlob) {
+    throw new Error('[KMS] Encryption failed — no ciphertext returned')
+  }
+
+  const encryptedPrivateKey = Buffer.from(encryptResult.CiphertextBlob).toString('base64')
+  privateKeyBytes.fill(0)
+
+  console.log(`[KMS] Agent key created for ${agentName} (${agentId}) via shared key ${keyId.slice(0, 8)}...`)
+
+  return {
+    kmsKeyId: keyId,
+    encryptedPrivateKey,
+    publicKey: hederaPublicKey.toStringDer(),
+  }
 }
 
 /**
- * Encrypt a private key using a KMS symmetric key.
- * Returns base64-encoded ciphertext.
+ * Decrypt an agent's Ed25519 private key from KMS ciphertext.
+ * The returned PrivateKey should be used immediately and allowed to GC.
  */
-export async function kmsEncryptKey(
+export async function decryptAgentKey(
   kmsKeyId: string,
-  privateKeyBytes: Uint8Array,
+  encryptedPrivateKey: string,
   agentId: string,
-): Promise<string> {
-  const kms = getKmsClient()
-  if (!kms) throw new Error('KMS is not configured.')
+): Promise<PrivateKey> {
+  const client = getKmsClient()
 
-  const result = await kms.send(new EncryptCommand({
+  const ciphertext = Buffer.from(encryptedPrivateKey, 'base64')
+  const decryptResult = await client.send(new DecryptCommand({
+    KeyId: kmsKeyId,
+    CiphertextBlob: ciphertext,
+    EncryptionContext: {
+      platform: 'aivy',
+      keyType: 'hedera-ed25519',
+      agentId,
+    },
+  }))
+
+  if (!decryptResult.Plaintext) {
+    throw new Error(`[KMS] Decryption failed for agent ${agentId}`)
+  }
+
+  const privateKeyHex = Buffer.from(decryptResult.Plaintext).toString('hex')
+  const privateKey = PrivateKey.fromStringED25519(privateKeyHex)
+
+  // Zero the decrypted bytes (the JS string privateKeyHex cannot be zeroed, but we limit exposure)
+  ;(decryptResult.Plaintext as Buffer).fill(0)
+
+  return privateKey
+}
+
+/**
+ * Sign a Hedera transaction using the KMS-protected agent key.
+ */
+export async function signTransactionWithKms(
+  transaction: Transaction,
+  kmsKeyId: string,
+  encryptedPrivateKey: string,
+  agentId: string,
+): Promise<Transaction> {
+  const privateKey = await decryptAgentKey(kmsKeyId, encryptedPrivateKey, agentId)
+  const signed = await transaction.sign(privateKey)
+  console.log(`[KMS] Transaction signed for agent ${agentId} via shared key ${kmsKeyId.slice(0, 8)}...`)
+  return signed
+}
+
+/**
+ * Rotate an agent's Hedera key.
+ * Generates a new Ed25519 keypair and encrypts it under the same shared key.
+ * Caller must also update the Hedera account key on-chain via AccountUpdateTransaction.
+ */
+export async function rotateAgentKey(
+  kmsKeyId: string,
+  agentId: string,
+): Promise<{ encryptedPrivateKey: string; publicKey: string; newPrivateKey: PrivateKey }> {
+  const client = getKmsClient()
+
+  const newPrivateKey = PrivateKey.generateED25519()
+  const privateKeyBytes = Buffer.from(newPrivateKey.toStringRaw(), 'hex')
+
+  const encryptResult = await client.send(new EncryptCommand({
     KeyId: kmsKeyId,
     Plaintext: privateKeyBytes,
     EncryptionContext: {
       platform: 'aivy',
-      agent: agentId,
-      keyType: 'ed25519-signing',
+      keyType: 'hedera-ed25519',
+      agentId,
     },
   }))
 
-  if (!result.CiphertextBlob) throw new Error('KMS Encrypt did not return CiphertextBlob')
+  if (!encryptResult.CiphertextBlob) throw new Error('[KMS] Key rotation encryption failed')
 
-  // Wipe the input plaintext buffer
-  if (privateKeyBytes instanceof Buffer) {
-    privateKeyBytes.fill(0)
-  } else {
-    new Uint8Array(privateKeyBytes.buffer).fill(0)
+  const encryptedPrivateKey = Buffer.from(encryptResult.CiphertextBlob).toString('base64')
+  privateKeyBytes.fill(0)
+
+  console.log(`[KMS] Key rotated for agent ${agentId}`)
+
+  return {
+    encryptedPrivateKey,
+    publicKey: newPrivateKey.publicKey.toStringDer(),
+    newPrivateKey,
   }
-
-  return Buffer.from(result.CiphertextBlob).toString('base64')
 }
 
 /**
- * Decrypt a private key using a KMS symmetric key.
- * Returns the raw private key bytes.
- * CALLER IS RESPONSIBLE FOR WIPING THE RETURNED BUFFER AFTER USE.
+ * Get metadata for a KMS key.
  */
-export async function kmsDecryptKey(
-  kmsKeyId: string,
-  ciphertextBase64: string,
-  agentId: string,
-): Promise<Buffer> {
-  const kms = getKmsClient()
-  if (!kms) throw new Error('KMS is not configured.')
+export async function getKeyInfo(kmsKeyId: string): Promise<KmsKeyInfo> {
+  const client = getKmsClient()
+  const result: DescribeKeyCommandOutput = await client.send(new DescribeKeyCommand({ KeyId: kmsKeyId }))
+  const meta = result.KeyMetadata as KeyMetadata
 
-  const result = await kms.send(new DecryptCommand({
+  return {
+    keyId: meta.KeyId ?? kmsKeyId,
+    arn: meta.Arn ?? '',
+    creationDate: meta.CreationDate ?? new Date(),
+    enabled: meta.Enabled ?? false,
+    description: meta.Description ?? '',
+    keyRotationEnabled: false,
+  }
+}
+
+/**
+ * Schedule a KMS key for deletion (minimum 7-day waiting period).
+ */
+export async function scheduleKeyDeletion(kmsKeyId: string, waitingDays = 7): Promise<void> {
+  const client = getKmsClient()
+  await client.send(new ScheduleKeyDeletionCommand({
     KeyId: kmsKeyId,
-    CiphertextBlob: Buffer.from(ciphertextBase64, 'base64'),
-    EncryptionContext: {
-      platform: 'aivy',
-      agent: agentId,
-      keyType: 'ed25519-signing',
-    },
+    PendingWindowInDays: waitingDays,
   }))
-
-  if (!result.Plaintext) throw new Error('KMS Decrypt did not return Plaintext')
-  return Buffer.from(result.Plaintext)
+  console.log(`[KMS] Key ${kmsKeyId} scheduled for deletion in ${waitingDays} days`)
 }
 
 /**
- * Schedule a KMS key for deletion (7-day minimum waiting period).
- * Used during demo cleanup.
+ * List all KMS key IDs in the account (up to 100).
  */
-export async function scheduleKmsKeyDeletion(kmsKeyId: string): Promise<void> {
-  const kms = getKmsClient()
-  if (!kms) return
-
-  try {
-    await kms.send(new ScheduleKeyDeletionCommand({
-      KeyId: kmsKeyId,
-      PendingWindowInDays: 7, // AWS minimum
-    }))
-    console.log(`[KMS] Scheduled key ${kmsKeyId} for deletion (7 days)`)
-  } catch (err) {
-    console.error(`[KMS] Failed to schedule key deletion for ${kmsKeyId}:`, err)
-  }
+export async function listAgentKeys(): Promise<string[]> {
+  const client = getKmsClient()
+  const result = await client.send(new ListKeysCommand({ Limit: 100 }))
+  return (result.Keys ?? []).map(k => k.KeyId ?? '').filter(Boolean)
 }

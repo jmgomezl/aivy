@@ -157,16 +157,11 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 `)
 
-// ─── Migrations (safe column additions for existing DBs) ──
+// ─── Migrations (add columns to existing DBs) ───────
 try {
-  const cols = db.prepare("PRAGMA table_info(deployments)").all() as { name: string }[]
-  const colNames = new Set(cols.map(c => c.name))
-  if (!colNames.has('kms_key_id')) {
-    db.exec('ALTER TABLE deployments ADD COLUMN kms_key_id TEXT')
-    console.log('[Aivy] Migration: added kms_key_id column to deployments')
-  }
-} catch (err) {
-  console.error('[Aivy] Migration error:', err)
+  db.exec(`ALTER TABLE deployments ADD COLUMN kms_key_id TEXT`)
+} catch {
+  // Column already exists — ignore
 }
 
 // ─── Types ───────────────────────────────────────────
@@ -239,7 +234,7 @@ function rowToDeployment(row: DeploymentRow): DeploymentRecord {
   let privateKey: string | null = null
   if (row.agent_private_key_encrypted) {
     if (row.kms_key_id) {
-      // KMS-encrypted key: stored as base64 ciphertext, decrypted at runtime via KMS
+      // KMS agent: stored value is raw KMS ciphertext (base64) — no AES layer
       privateKey = row.agent_private_key_encrypted
     } else {
       try {
@@ -274,7 +269,7 @@ function rowToDeployment(row: DeploymentRow): DeploymentRecord {
     agentAccountId: row.agent_account_id,
     agentPrivateKey: privateKey,
     walletType: row.wallet_type,
-    kmsKeyId: row.kms_key_id ?? null,
+    kmsKeyId: row.kms_key_id,
   }
 }
 
@@ -360,7 +355,8 @@ export function getAllDeployments(): DeploymentRecord[] {
 }
 
 export function insertDeployment(record: DeploymentRecord): void {
-  // KMS keys are already encrypted (base64 ciphertext) — don't double-encrypt
+  // KMS agents: store raw KMS ciphertext — no AES layer (plaintext never existed here)
+  // Legacy agents: AES-encrypt the plaintext hex key
   const encryptedKey = record.agentPrivateKey
     ? (record.kmsKeyId ? record.agentPrivateKey : encrypt(record.agentPrivateKey))
     : null
@@ -1067,7 +1063,7 @@ export function migrateFromJson(): void {
           agentAccountId: (record.agentAccountId as string) ?? null,
           agentPrivateKey: (record.agentPrivateKey as string) ?? null,
           walletType: String(record.walletType ?? 'platform'),
-          kmsKeyId: (record.kmsKeyId as string) ?? null,
+          kmsKeyId: null,
         }
 
         insertDeployment(deployment)
