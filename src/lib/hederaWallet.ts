@@ -262,11 +262,13 @@ export const fundAgentAccount = async (
     .setNodeAccountIds([new sdk.AccountId(3)])
     .freeze()
 
-  const receipt = await hashconnect.sendTransaction(fromAccount, tx)
-
-  return {
-    transactionId: receipt.transactionId?.toString() ?? 'unknown',
-  }
+  const transactionId = tx.transactionId?.toString()
+  if (!transactionId) throw new Error('The funding transaction has no transaction ID.')
+  // HashConnect pins an older SDK type. This already-frozen basic transfer uses
+  // the same serialization interface; retain the AccountId from its own SDK.
+  await hashconnect.sendTransaction(connectedId, tx as unknown as Parameters<HashConnectInstance['sendTransaction']>[1])
+  // TransactionReceipt does not contain an ID; it belongs to the frozen request.
+  return { transactionId }
 }
 
 export const disconnectHederaWallet = async () => {

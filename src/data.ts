@@ -246,6 +246,7 @@ export const emptyStats: NetworkStats = {
   totalExecutions: 0,
   pendingTransactions: 0,
   hbarSecured: 0,
+  totalBalance: 0,
 }
 
 export const roomSlots: Record<string, Array<{ x: number; y: number }>> = {

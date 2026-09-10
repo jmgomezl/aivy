@@ -8,6 +8,7 @@
     "dev:web": "vite",
     "dev:server": "tsx watch server/index.ts",
     "build": "tsc -b && tsc -p tsconfig.server.json && vite build",
+    "build:web": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",

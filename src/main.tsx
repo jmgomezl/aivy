@@ -1,8 +1,11 @@
-import { StrictMode } from 'react'
+import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Buffer } from 'buffer/'
 import './index.css'
-import App from './App.tsx'
+// The focused Quorum canvas does not load the office's wallet/Phaser runtime.
+const Page = window.location.pathname.replace(/\/$/, '') === '/quorum'
+  ? lazy(() => import('./components/QuorumCanvas.tsx'))
+  : lazy(() => import('./App.tsx'))
 
 type PolyfilledGlobal = typeof globalThis & {
   Buffer?: unknown
@@ -35,6 +38,6 @@ if (!('process' in globalThis)) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <Suspense fallback={<div style={{padding:40,color:'#a7d7c3'}}>Opening Aivy…</div>}><Page /></Suspense>
   </StrictMode>,
 )

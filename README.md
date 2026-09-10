@@ -27,6 +27,29 @@
 
 ---
 
+## Aivy Quorum · monthly cover agent
+
+**[Open the cover canvas](https://aivylabs.xyz/quorum)** · [Explore Quorum](https://quorum.aivylabs.xyz) · [Implementation and deployment](docs/QUORUM.md)
+
+Choose **Medellín**, a monthly budget and a minimum payout. Review the limits,
+then activate: the first purchase creates a real Hedera testnet policy. A saved
+mandate permits at most three monthly purchases; pause and inspect receipts from
+the same canvas. No wallet extension is needed.
+
+```mermaid
+flowchart LR
+  User["Place + budget + minimum payout"] --> Aivy["Aivy canvas<br/>review · approve · pause"]
+  Aivy --> Guard["Quorum worker<br/>due date + saved limits"]
+  Guard --> Hedera["Hedera testnet<br/>premium · terms · NFT · schedule"]
+  Hedera --> Receipt["Receipt + next attempt"]
+```
+
+**Added September 9, 2026, after the APEX submission.** This focused route runs
+through Quorum's deterministic scheduler and service-managed testnet accounts.
+It does not use the older office's LLM, AWS KMS or AivyVault. Future renewals are
+planned attempts, not guaranteed continuous coverage; test tokens have no cash
+value. [Guardrails and recovery](https://github.com/jmgomezl/aivy-parametric-pool/blob/main/docs/COVER-AGENT.md).
+
 ## 🎛 Aivy Studio
 
 **[studio.aivylabs.xyz](https://studio.aivylabs.xyz)** — the visual canvas for orchestrating multi-agent workflows on Hedera. Think **n8n, but for AI agents**: drag, connect, and activate agent workflows as node graphs.
@@ -363,7 +386,7 @@ Branch protection is enabled — all changes go through PRs.
 
 ## Community Contributions
 
-> **Note:** These contributions were made during the APEX Hackathon development period. No changes have been made to the deployed Aivy platform (aivylabs.xyz) after the hackathon submission deadline.
+> **Historical scope:** The contributions above belong to the APEX development period. The Quorum canvas and its homepage/office links were added on September 9, 2026, after that submission; they are not claimed as APEX work. The integration starts from commit `6ddc2633b9a62ef2b9def08da025f1c4de8064f6` and preserves the existing office backend.
 
 During the development of Aivy, we identified issues and contributed back to the Hedera ecosystem tools we depend on:
 

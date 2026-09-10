@@ -70,6 +70,7 @@ export default function TopBar({
       </div>
 
       <div className="topbar-right">
+        <a className="topbar-quorum-link" href="/quorum">Quorum ↗</a>
         {/* About */}
         {onAbout && (
           <button

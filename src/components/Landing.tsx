@@ -1,4 +1,4 @@
-import { type CSSProperties, useState, useEffect, useRef, useMemo } from 'react'
+import { type CSSProperties, type ReactElement, useState, useEffect, useRef, useMemo } from 'react'
 import { templates, roomCards } from '../data'
 import { getSpriteSheet, ensureSpritesLoaded, agentNameToSpriteType } from '../sprites/generateSprites'
 import './Landing.css'
@@ -435,7 +435,7 @@ function PixelRocket() {
   )
 }
 
-const charComponents: Record<DeployPhase['character'], () => JSX.Element> = {
+const charComponents: Record<DeployPhase['character'], () => ReactElement> = {
   key: PixelKey,
   shield: PixelShield,
   vault: PixelVault,
@@ -608,6 +608,11 @@ export default function Landing({ onEnter, onTryDemo, onAbout }: LandingProps) {
             Deploy AI Agents on Hedera in 60 Seconds
           </p>
         </header>
+
+        <section className="landing-quorum" aria-label="Aivy Quorum earthquake cover">
+          <div><span className="landing-quorum-label">NEW · AIVY QUORUM</span><h2>Earthquake cover. On your terms.</h2><p>A monthly cover agent, with a receipt for every purchase.</p></div>
+          <div className="landing-quorum-links"><a href="/quorum">Try the cover canvas →</a><a href="https://quorum.aivylabs.xyz" target="_blank" rel="noreferrer">Explore Quorum ↗</a></div>
+        </section>
 
         <div className="landing-office-preview" style={{ animationDelay: '0.2s' }}>
           <div className="preview-office">

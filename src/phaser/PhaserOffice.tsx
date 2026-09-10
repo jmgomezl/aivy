@@ -98,7 +98,7 @@ export default function PhaserOffice({
   const { simCoordinations, simActiveIds, fadingCoordIds, simEvents, triggerCoordination } = useSimulatedActivity(agents, soundOn)
 
   // Forward real coordination triggers from App
-  const prevTriggerRef = useRef<CoordTrigger>(null)
+  const prevTriggerRef = useRef<CoordTrigger | undefined>(null)
   useEffect(() => {
     if (coordTrigger && coordTrigger !== prevTriggerRef.current) {
       triggerCoordination(coordTrigger.srcId, coordTrigger.tgtId, coordTrigger.action, coordTrigger.label)

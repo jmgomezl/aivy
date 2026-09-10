@@ -120,7 +120,7 @@ function App() {
   // ─── Hooks ────────────────────────────────────
   const live = useLiveData()
   const toolCatalog = useToolCatalog()
-  const { wallet, connectWallet, disconnectWallet, sessionAccountId, logout, authError, authVersion, balanceVersion, invalidateBalances } = useWalletContext()
+  const { wallet, disconnectWallet, sessionAccountId, authError, authVersion, invalidateBalances } = useWalletContext()
 
   // Derive user account ID from connected wallet or persisted session
   const userAccountId = wallet.status === 'connected' ? wallet.accountId : sessionAccountId
@@ -299,7 +299,7 @@ function App() {
       setResultDrawer({
         title: 'Agent destroyed',
         message: `${selectedAgent.name} was permanently removed.${refundMsg}`,
-        references: result.refundTxId ? [{ type: 'transaction' as const, value: result.refundTxId, mirrorUrl: `https://hashscan.io/testnet/transaction/${result.refundTxId}` }] : [],
+        references: result.refundTxId ? [{ type: 'transaction' as const, label: 'Refund transaction', value: result.refundTxId, url: `https://hashscan.io/testnet/transaction/${result.refundTxId}` }] : [],
       })
       setSelectedAgentId('')
       await live.refreshLive()

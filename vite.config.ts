@@ -20,6 +20,9 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          // Keep shared preload/Buffer helpers out of the multi-megabyte wallet
+          // chunk so the standalone cover canvas can load independently.
+          if (id.includes('vite/preload-helper') || id.includes('commonjsHelpers') || /node_modules\/(buffer|base64-js|ieee754)\//.test(id)) return 'polyfills'
           if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/')) {
             return 'react-vendor'
           }
@@ -42,6 +45,7 @@ export default defineConfig({
     strictPort: true,
     ...(process.env.VITE_NO_SSL ? {} : { https: {} }),
     proxy: {
+      '/api/quorum': {target:'https://quorum.aivylabs.xyz',changeOrigin:true,rewrite:path=>path.replace(/^\/api\/quorum/, '/api/cover-agents')},
       '/api': 'http://127.0.0.1:3001',
     },
   },
