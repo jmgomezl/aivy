@@ -50,6 +50,12 @@ It does not use the older office's LLM, AWS KMS or AivyVault. Future renewals ar
 planned attempts, not guaranteed continuous coverage; test tokens have no cash
 value. [Guardrails and recovery](https://github.com/jmgomezl/aivy-parametric-pool/blob/main/docs/COVER-AGENT.md).
 
+Verified with [real Medellín policy #34](https://quorum.aivylabs.xyz/policy/34):
+10 aUSDd premium, 1,398.89 aUSDd conditional payout. Pause/reload/resume and a
+worker restart retained one purchase.
+[14-second demo](https://quorum.aivylabs.xyz/demo-video/aivy-monthly-cover.mp4) ·
+[Receipts and QA](https://github.com/jmgomezl/aivy-parametric-pool/blob/main/docs/qa/AIVY-COVER-AGENT.md).
+
 ## 🎛 Aivy Studio
 
 **[studio.aivylabs.xyz](https://studio.aivylabs.xyz)** — the visual canvas for orchestrating multi-agent workflows on Hedera. Think **n8n, but for AI agents**: drag, connect, and activate agent workflows as node graphs.
