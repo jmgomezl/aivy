@@ -79,6 +79,10 @@ legacy wallet chunk. Fixtures are never used as live transaction evidence.
 sizes, quick and typed answers, receipt links, read-only controls, errors,
 reduced motion and every close path. Its fixtures do not contact a model or ledger.
 
+The deployed companion was also verified against existing policy #34 with actual
+OpenAI interpretation and Mirror Node reads at desktop, 390 px and 320 px. Chat
+left the saved mandate unchanged. [Live evidence and recording](https://github.com/jmgomezl/aivy-parametric-pool/blob/main/docs/qa/COVER-COMPANION.md).
+
 The existing full repository test run and full backend build have baseline
 failures, reproduced on untouched commit `6ddc263`: two outdated expectations
 (template count and demo authorization behavior), a local better-sqlite3 Node
