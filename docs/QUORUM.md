@@ -18,6 +18,17 @@ The worker runs while the browser is closed. The saved rules are immutable;
 renewals use fresh prices. No purchase is allowed below the minimum payout or
 above the monthly budget. The mandate ends after three monthly periods.
 
+**Ask your agent:** open the animated companion at the right. Ask about policy
+status, the next renewal or spending limits; answers include actual receipt links.
+Quick questions skip AI. Typed questions use OpenAI only to select a topic, then
+Quorum supplies the facts for this browser's latest policy. If Hedera cannot be
+read, status is explicitly unverified. Chat cannot buy, pause, change rules or sign.
+Use the existing canvas controls for those actions.
+
+The companion uses the existing office robot sprite, sits beside the canvas on
+large screens and becomes a compact panel on mobile. Close with ×, Escape, the
+launcher or a click outside. Reduced-motion preferences disable its animation.
+
 ## Trust boundary
 
 This is a dedicated Aivy frontend connected to Quorum's deterministic backend.
@@ -26,6 +37,12 @@ AivyVault, wallet connector or general-purpose tools. The page explains that
 boundary in its expandable details. Quorum holds the demo signing keys; a
 browser capability controls the demo account. Keep that capability private.
 Pause before clearing browser storage: losing access does not cancel the plan.
+
+The companion is separate from the deterministic purchase worker. Only the typed
+question is sent to OpenAI—not the capability, policy data, chat history or keys.
+Strict schema output selects one of nine topics; trusted server code supplies all
+answer text and links. API bounds, persistent AI quota and an honest fallback
+keep provider failure from affecting the purchase scheduler.
 
 Each completed purchase creates a separate service-managed policy beneficiary,
 using the existing Quorum issuer and its limits, issuance lock and recovery
@@ -57,6 +74,10 @@ Shared Vite helpers and Buffer polyfills have their own chunk.
 preview on `https://127.0.0.1:5185/`. It checks widths 1440, 1024, 768, 390 and
 320, consent, activation, receipts, pause/resume, reload, no overflow and no
 legacy wallet chunk. Fixtures are never used as live transaction evidence.
+
+`node scripts/check-quorum-companion.mjs` checks seven desktop/mobile/landscape
+sizes, quick and typed answers, receipt links, read-only controls, errors,
+reduced motion and every close path. Its fixtures do not contact a model or ledger.
 
 The existing full repository test run and full backend build have baseline
 failures, reproduced on untouched commit `6ddc263`: two outdated expectations

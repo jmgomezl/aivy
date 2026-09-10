@@ -31,6 +31,10 @@
 
 **[Open the cover canvas](https://aivylabs.xyz/quorum)** · [Explore Quorum](https://quorum.aivylabs.xyz) · [Implementation and deployment](docs/QUORUM.md)
 
+**Ask your cover companion.** The animated agent on the right explains your policy,
+next renewal and budget, with public receipt links. AI interprets questions;
+Quorum supplies owner-bound facts. Chat stays read only—no signing or purchases.
+
 Choose **Medellín**, a monthly budget and a minimum payout. Review the limits,
 then activate: the first purchase creates a real Hedera testnet policy. A saved
 mandate permits at most three monthly purchases; pause and inspect receipts from

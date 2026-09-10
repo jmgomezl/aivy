@@ -1,5 +1,6 @@
 import {useEffect, useRef, useState} from 'react'
 import './QuorumCanvas.css'
+import QuorumCompanion from './QuorumCompanion'
 
 type Rules = {requestId:string; placeId:string; monthlyBudget:number; minimumPayout:number; acceptTerms:boolean}
 type Policy = {serial:string; premium:number; payout:number; beneficiaryId:string; lapsesAt:string; saleTxId:string; scheduleId:string; termsPointer:string}
@@ -29,6 +30,7 @@ async function api<T>(path:string,body?:object):Promise<T>{
 }
 
 export default function QuorumCanvas(){
+ const [companionOpen,setCompanionOpen]=useState(false)
  const [rules,setRules]=useState<Rules>(savedRules),[preview,setPreview]=useState<Preview|null>(null),[view,setView]=useState<View|null>(null)
  const [busy,setBusy]=useState(''),[error,setError]=useState(''),[statusError,setStatusError]=useState(''),[notice,setNotice]=useState(''),[available,setAvailable]=useState(false),[accepted,setAccepted]=useState(false)
  const alive=useRef(true),mandate=view?.mandate,policy=mandate?.attempts.filter(a=>a.policy).at(-1)?.policy,done=Boolean(policy),running=mandate?.status==='running'
@@ -57,7 +59,7 @@ export default function QuorumCanvas(){
   catch(e){setError((e as Error).message)}finally{setBusy('')}
  }
  const status=({scheduled:'Scheduled',running:'Purchasing',paused:'Paused',needs_attention:'Needs attention',needs_review:'Needs review',completed:'Plan complete',expired:'Plan ended'} as Record<string,string>)[mandate?.status||'']||'Ready to configure'
- return <div className="quorum-canvas">
+ return <div className={`quorum-canvas${companionOpen?' has-companion':''}`}>
   <header className="qc-header"><a className="qc-brand" href="/"><img src="/logo-192.png" alt=""/>Aivy <span>×</span> <strong>Quorum</strong></a><nav aria-label="Project links"><a href="/">Agent office ↗</a><a href="https://quorum.aivylabs.xyz" target="_blank" rel="noreferrer">Explore Quorum ↗</a></nav></header>
   <main className="qc-main">
    <div className="qc-intro"><div><p className="qc-eyebrow">COVER AGENT · TESTNET</p><h1>Your place.<br/><span>Your rules. Every month.</span></h1></div><p>Set a budget. Quorum checks the terms.<br/>Every purchase leaves a receipt.</p></div>
@@ -81,5 +83,6 @@ export default function QuorumCanvas(){
    <div className="qc-terms"><div><span>M6+</span><span>Within 100 km</span><span>Depth ≤70 km</span><span>Test tokens only</span></div><p>Payment requires the recorded earthquake conditions. Damage alone does not trigger a payout.</p></div>
    <details className="qc-details"><summary>What this agent can do <span>+</span></summary><div><p>This is a dedicated Aivy cover canvas, executed by Quorum’s deterministic testnet scheduler. It does not use the office’s general AI tools, AivyVault, or KMS custody. Your approved rules are stored on the server; a worker checks them every 30 seconds, even when this page is closed.</p><p>One purchase per eligible monthly period, for up to three periods. Premiums use your funded, service-managed aUSDd account. Network fees are sponsored and still subject to Quorum’s global limits. The service assigns a separate managed beneficiary for each non-transferable policy NFT.</p><p>No backdated purchases or guaranteed uninterrupted cover: insufficient funds, unavailable data, pool limits or an outage can pause a renewal. An uncertain transaction stops for review. An already accepted purchase may finish after you pause. Earthquake checks remain request-driven.</p><p>Browser storage controls access to this demo account. Clearing it loses access; the mandate can continue until it expires. Pause before clearing storage. No real cash, commercial insurance, or unlimited authority is granted.</p>{mandate&&<p>Funding account <a href={`https://hashscan.io/testnet/account/${mandate.accountId}`} target="_blank" rel="noreferrer">{mandate.accountId} ↗</a> · mandate ends {date(mandate.expiresAt)}.</p>}<a href="https://github.com/jmgomezl/aivy-parametric-pool/blob/main/docs/COVER-AGENT.md" target="_blank" rel="noreferrer">Architecture & guardrails ↗</a></div></details>
   </main><footer className="qc-footer"><span>Aivy sets the rules. Quorum makes the commitment verifiable.</span><a href="https://quorum.aivylabs.xyz/demo-video/" target="_blank" rel="noreferrer">Watch the demo ↗</a></footer>
+  <QuorumCompanion policySerial={policy?.serial} onOpenChange={setCompanionOpen}/>
  </div>
 }
