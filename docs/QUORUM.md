@@ -5,6 +5,8 @@ The homepage and agent-office navigation link to this focused workflow. It lets
 a visitor approve up to three monthly testnet policy purchases for Medellín,
 Mexico City or Tokyo, with a budget cap and minimum payout.
 
+![Saved monthly mandate, companion answer and the policy opened in Quorum](screenshots/aivy-quorum.gif)
+
 ## User flow
 
 1. Choose a place, monthly premium limit and minimum payout.
@@ -28,6 +30,13 @@ Use the existing canvas controls for those actions.
 The companion uses the existing office robot sprite, sits beside the canvas on
 large screens and becomes a compact panel on mobile. Close with ×, Escape, the
 launcher or a click outside. Reduced-motion preferences disable its animation.
+
+**The same pattern now exists inside [Quorum](https://quorum.aivylabs.xyz/).** Its
+page-aware companion reads public policies and the visitor's own demo balances,
+and explains Hedera, Axelar, Uniswap and Blocky402 with labeled receipts.
+The two companions share backend AI limits, but browser capabilities stay on
+their original sites. A public policy link does not transfer account access.
+[Quorum companion architecture](https://github.com/jmgomezl/aivy-parametric-pool/blob/main/docs/COMPANION.md).
 
 ## Trust boundary
 
@@ -91,3 +100,18 @@ this integration. The frontend build and dedicated canvas checks pass.
 
 This integration was added September 9, 2026, after the APEX submission. It is
 new Quorum integration work, not a retroactive claim about that earlier build.
+
+## Current screenshots and animation
+
+Captured from the deployed sites on **September 10, 2026**, using existing policy
+#34. The GIF shows the saved mandate → actual AI-interpreted status answer → next
+planned renewal → that policy's NFT in Quorum. Page-loading gaps are cut; retained
+interaction plays at 1×. The capture allows only read-only chat POSTs and GETs.
+No activation, purchase, pause, deposit, swap or ledger signature was submitted.
+
+- [Canvas screenshot](screenshots/quorum-canvas.png)
+- [Companion screenshot](screenshots/quorum-companion.png)
+- [Capture script and provenance](https://github.com/jmgomezl/aivy-parametric-pool/blob/main/docs/media/README.md)
+
+Existing APEX screenshots elsewhere in this repository retain their historical
+scope. The new integration's images are kept separately under `docs/screenshots/`.

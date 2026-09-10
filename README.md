@@ -27,18 +27,24 @@
 
 ---
 
-## Aivy Quorum · monthly cover agent
+## Aivy Labs × Quorum · monthly cover
 
 **[Open the cover canvas](https://aivylabs.xyz/quorum)** · [Explore Quorum](https://quorum.aivylabs.xyz) · [Implementation and deployment](docs/QUORUM.md)
-
-**Ask your cover companion.** The animated agent on the right explains your policy,
-next renewal and budget, with public receipt links. AI interprets questions;
-Quorum supplies owner-bound facts. Chat stays read only—no signing or purchases.
 
 Choose **Medellín**, a monthly budget and a minimum payout. Review the limits,
 then activate: the first purchase creates a real Hedera testnet policy. A saved
 mandate permits at most three monthly purchases; pause and inspect receipts from
 the same canvas. No wallet extension is needed.
+
+![Live Aivy Labs integration: monthly rules, actual policy 34, companion answer, next renewal and the same cover NFT opened in Quorum](docs/screenshots/aivy-quorum.gif)
+
+*September 10, 2026 · existing policy #34, not a new purchase. Future dates remain
+planned attempts. [Full-size canvas](docs/screenshots/quorum-canvas.png).*
+
+**Ask on either site.** Aivy's companion explains your saved policy, renewal and
+budget. Quorum's companion explains public policies, balances, Hedera, Axelar,
+Uniswap and x402, with network-labeled evidence. AI selects a topic; trusted code
+supplies the facts. **Both chats are read only.**
 
 ```mermaid
 flowchart LR
@@ -59,6 +65,16 @@ Verified with [real Medellín policy #34](https://quorum.aivylabs.xyz/policy/34)
 worker restart retained one purchase.
 [14-second demo](https://quorum.aivylabs.xyz/demo-video/aivy-monthly-cover.mp4) ·
 [Receipts and QA](https://github.com/jmgomezl/aivy-parametric-pool/blob/main/docs/qa/AIVY-COVER-AGENT.md).
+
+<details>
+<summary>See the live companion beside the canvas</summary>
+
+![Aivy companion reading the actual policy and linking its Hedera schedule](docs/screenshots/quorum-companion.png)
+
+[Companion architecture](https://github.com/jmgomezl/aivy-parametric-pool/blob/main/docs/COMPANION.md)
+· [Media provenance](docs/QUORUM.md#current-screenshots-and-animation).
+
+</details>
 
 ## 🎛 Aivy Studio
 
