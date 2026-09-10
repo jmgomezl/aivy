@@ -5,10 +5,11 @@ const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
 const output='/tmp/quorum-cover-canvas';await fs.mkdir(output,{recursive:true});
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try{for(const width of [1440,1024,768,390,320]){
- const context=await browser.newContext({viewport:{width,height:1000},ignoreHTTPSErrors:true});const page=await context.newPage();let mandate=null;const posts=[],errors=[],requests=[];
+ const context=await browser.newContext({viewport:{width,height:1000},ignoreHTTPSErrors:true});await context.addInitScript(()=>localStorage.setItem('aivy-quorum-session-v1','c'.repeat(64)));const page=await context.newPage();let mandate=null,firstRead=true;const posts=[],errors=[],requests=[];
  page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>requests.push(r.url()));
  await page.route('**/api/quorum/**',async route=>{
   const req=route.request(),action=new URL(req.url()).pathname.replace('/api/quorum','');let data={ok:true,network:'testnet'};
+  if(action==='/'&&firstRead){firstRead=false;return route.fulfill({status:409,contentType:'application/json',body:JSON.stringify({message:'Demo account needs reconciliation. Do not request another starter allocation.'})});}
   if(req.method()==='POST')posts.push({action,body:req.postDataJSON()});
   if(action==='/quote')data={ok:true,days:30,nextDueAt:'2026-10-09T00:00:00Z',quote:{ok:true,settled:{premium:10,payout:1398.8}}};
   if(action==='/activate'){
@@ -24,6 +25,7 @@ try{for(const width of [1440,1024,768,390,320]){
  await page.screenshot({path:`${output}/fixture-review-${width}.png`,fullPage:true});
  await page.getByRole('checkbox').check();await activate.click();await page.getByRole('button',{name:'Pause agent'}).waitFor();
  assert.equal(posts.filter(p=>p.action==='/activate').length,1);assert.equal(posts.filter(p=>p.action==='/start').length,1);
+ assert.equal(await page.getByRole('alert').count(),0,'A successful activation must clear an earlier provisioning status error');
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  await page.screenshot({path:`${output}/fixture-active-${width}.png`,fullPage:true});
  await page.getByRole('button',{name:'Pause agent'}).click();await page.getByRole('button',{name:'Resume agent'}).waitFor();await page.reload();await page.getByRole('button',{name:'Resume agent'}).waitFor();
