@@ -64,7 +64,7 @@ value. [Guardrails and recovery](https://github.com/jmgomezl/aivy-parametric-poo
 Verified with [real Medellín policy #34](https://quorum.aivylabs.xyz/policy/34):
 10 aUSDd premium, 1,398.89 aUSDd conditional payout. Pause/reload/resume and a
 worker restart retained one purchase.
-[14-second demo](https://quorum.aivylabs.xyz/demo-video/aivy-monthly-cover.mp4) ·
+[24-second Aivy → Quorum demo](https://quorum.aivylabs.xyz/demo-video/aivy-monthly-cover.mp4) ·
 [Receipts and QA](https://github.com/jmgomezl/aivy-parametric-pool/blob/main/docs/qa/AIVY-COVER-AGENT.md).
 
 [Companion architecture](https://github.com/jmgomezl/aivy-parametric-pool/blob/main/docs/COMPANION.md)
